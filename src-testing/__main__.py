@@ -13,6 +13,8 @@ from PyQt6.QtWidgets import QInputDialog
 from Adinkra import Adinkra
 from PyQt6.QtWidgets import QPushButton
 from rich import print
+from PyQt6.QtWidgets import QGraphicsTextItem
+from PyQt6.QtGui import QFont
 
 def find_first_adinkra(parent_item):
     for i in range(parent_item.childCount()):
@@ -22,15 +24,30 @@ def find_first_adinkra(parent_item):
     return None  # Not found
 
 class DraggableBoson(QGraphicsEllipseItem):
-    def __init__(self, x, y, grid_size_x=100, grid_size_y=800):
-        super().__init__(x, y, 50, 50)  # (x, y, width, height)
+    def __init__(self, x, y, label="", grid_size_x=100, grid_size_y=400, fontsize=12):
+        super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
         self.setBrush(Qt.GlobalColor.white)
         self.setPen(QPen(Qt.GlobalColor.black))
         self.setFlags(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable |
                       QGraphicsEllipseItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+
         self.grid_size_x = grid_size_x
         self.grid_size_y = grid_size_y
-        self.edges = []  # List of edges connected to this node
+        self.edges = []  # List of connected edges
+
+        # Add centered text
+        self.text_item = QGraphicsTextItem(label, self)  # Add text as child
+        self.text_item.setFont(QFont("Arial", fontsize))
+        self.text_item.setDefaultTextColor(Qt.GlobalColor.black)
+        self.center_text()
+
+    def center_text(self):
+        """Center the text in the ellipse."""
+        bounding_rect = self.text_item.boundingRect()
+        ellipse_rect = self.rect()
+        x = ellipse_rect.x() + (ellipse_rect.width() - bounding_rect.width()) / 2
+        y = ellipse_rect.y() + (ellipse_rect.height() - bounding_rect.height()) / 2
+        self.text_item.setPos(x, y)
 
     def itemChange(self, change, value):
         if change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionChange:
@@ -45,20 +62,35 @@ class DraggableBoson(QGraphicsEllipseItem):
         return super().itemChange(change, value)
 
 class DraggableFermion(QGraphicsEllipseItem):
-    def __init__(self, x, y, grid_size_x=100, grid_size_y=800):
-        super().__init__(x, y, 50, 50)  # (x, y, width, height)
+    def __init__(self, x, y, label="", grid_size_x=100, grid_size_y=400, fontsize=12):
+        super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
         self.setBrush(Qt.GlobalColor.black)
         self.setPen(QPen(Qt.GlobalColor.black))
         self.setFlags(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable |
-                      QGraphicsEllipseItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+                    QGraphicsEllipseItem.GraphicsItemFlag.ItemSendsGeometryChanges)
+
         self.grid_size_x = grid_size_x
         self.grid_size_y = grid_size_y
-        self.edges = []  # List of edges connected to this node
+        self.edges = []  # List of connected edges
+
+        # Add centered text
+        self.text_item = QGraphicsTextItem(label, self)  # Add text as child
+        self.text_item.setFont(QFont("Arial", fontsize))
+        self.text_item.setDefaultTextColor(Qt.GlobalColor.white)
+        self.center_text()
+
+    def center_text(self):
+        """Center the text in the ellipse."""
+        bounding_rect = self.text_item.boundingRect()
+        ellipse_rect = self.rect()
+        x = ellipse_rect.x() + (ellipse_rect.width() - bounding_rect.width()) / 2
+        y = ellipse_rect.y() + (ellipse_rect.height() - bounding_rect.height()) / 2
+        self.text_item.setPos(x, y)
 
     def itemChange(self, change, value):
         if change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionChange:
             new_x = round(value.x() / self.grid_size_x) * self.grid_size_x
-            new_y = round(value.y() / self.grid_size_y) * self.grid_size_y 
+            new_y = round(value.y() / self.grid_size_y) * self.grid_size_y
             return QPointF(new_x, new_y)
 
         elif change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionHasChanged:
@@ -80,14 +112,11 @@ class Edge(QGraphicsLineItem):
         else:
             style = Qt.PenStyle.SolidLine
         
-
         qcolor = QColor.fromHsv(int(359*color), 255, 255, alpha=255)
         self.setPen(QPen(qcolor, 3, style))
-
         # Attach this edge to the nodes
         node1.edges.append(self)
         node2.edges.append(self)
-
         # Initial position
         self.update_position()
 
@@ -138,6 +167,7 @@ class TreeNode(QTreeWidgetItem):
         treeWidget.addTopLevelItem(root_item)
         return root_item
 
+
 class MainWindow(QMainWindow, Ui_MainWindow):
     def __init__(self):
         super().__init__()
@@ -148,20 +178,21 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.library = None
         self.theory = None
         self.adinkra = None
+        self.fontsize = 24
         # self setup graphics
         self.setupUi(self)
         self.refresh_graph()
+        self.graphicsView.scale(0.5, 0.5)  # Zoom out 2x
 
         # Connect menu actions to functions
         self.actionOpen_Library.triggered.connect(self.open_library_file)
+        self.actionClose.triggered.connect(self.close_library)
         self.actionSave_Library.triggered.connect(self.save_library_file)
         self.actionCreate_Theory.triggered.connect(self.add_theory)
         self.actionImportAdinkra.triggered.connect(self.import_adinkra)
+        self.actionCreate_Library.triggered.connect(self.new_library)
         self.actionComment.triggered.connect(self.add_comment)
-        self.actionLagrangian.triggered.connect(self.add_lagrangian)
-        self.actionEquations_of_Motion.triggered.connect(self.add_equations_of_motion)
         self.treeWidget.itemSelectionChanged.connect(self.on_item_selected)
-
 
     def get_user_input(self, window_title, default_value):
         """Show a larger floating text input box."""
@@ -185,19 +216,45 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             while theory.parent() and theory.parent().parent():
                 theory = theory.parent()
             self.theory = theory
+            self.library = theory.parent()
+
+            tableitem = self.tableWidget.item(0, 0)
+            tableitem.setText(f"    {self.library.text(0)} ")
+            tableitem = self.tableWidget.item(1, 0)
+            tableitem.setText(f"    {self.theory.text(0)} ")
+            tableitem = self.tableWidget.item(2, 0)
+            tableitem.setText(f"    {self.adinkra.text(0)} ")
+            
             self.refresh_graph()
 
         elif isinstance(selected_item, TreeNode):
             # Access the theory node level
             # Ensure it's not the root node
             if not selected_item.parent():
+                self.library = selected_item
+                self.theory = None
+                self.adinkra = None
+                tableitem = self.tableWidget.item(0, 0)
+                tableitem.setText(f"    {selected_item.text(0)} ")
                 return
             # Traverse up to the theory node. if no parent, then we are at the root node. 
             theory = selected_item
             while theory.parent() and theory.parent().parent():
                 theory = theory.parent()
+            self.library = theory.parent()
             self.theory = theory
             self.adinkra = find_first_adinkra(theory)
+            
+            tableitem = self.tableWidget.item(0, 0)
+            tableitem.setText(f"    {self.library.text(0)} ")
+            tableitem = self.tableWidget.item(1, 0)
+            tableitem.setText(f"    {self.theory.text(0)} ")
+            if self.adinkra is not None:
+                tableitem = self.tableWidget.item(2, 0)
+                tableitem.setText(f"    {self.adinkra.text(0)} ")
+            else:
+                tableitem = self.tableWidget.item(2, 0)
+                tableitem.setText("    None")
             self.refresh_graph()
 
     def refresh_graph(self):
@@ -207,23 +264,20 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.graphicsView.setScene(self.scene)
             self.graphicsView.setBackgroundBrush(QBrush(QColor(255, 255, 255, 255)))
-            self.graphicsView.scale(0.5, 0.5)  # Zoom out 2x
 
-            # defined 
-            self.nodes = []
-            self.edges = []
             self.draw_graph()
     
     def new_library(self):
         try:
-            if self.library is not None:
-                userpressed = self.show_save_option_box()
-                if userpressed == "Save":
-                    self.save_library_file()
-                elif userpressed == "Don't Save":
-                    pass
-                elif userpressed == "Cancel":
-                    return 0
+#            if self.library is not None:
+                #userpressed = self.show_save_option_box()
+                #if userpressed == "Save":
+                    #self.save_library_file()
+                #elif userpressed == "Don't Save":
+                    #pass
+                #elif userpressed == "Cancel":
+                    #return 0
+            #self.reset_library()
             name = self.get_user_input("Creating new Library: Enter Library Name", "Library Name")
             if name:  # If the user pressed OK and entered text
                 self.library = TreeNode(name)
@@ -272,20 +326,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             ic(f"Exception Caught: {e}")
             QMessageBox.information(self, "Note", f"No Comment Created:\n{str(e)}")
 
-    def add_lagrangian(self):
-        try:
-            pass
-        except Exception as e:
-            ic(f"Exception Caught: {e}")
-            QMessageBox.information(self, "Note", f"No Lagrangian Created:\n{str(e)}")
-
-    def add_equations_of_motion(self):
-        try:
-            pass
-        except Exception as e:
-            ic(f"Exception Caught: {e}")
-            QMessageBox.information(self, "Note", f"No Equations of Motion Created:\n{str(e)}")
-    
     def import_adinkra(self):
         try:
             if not isinstance(self.theory, TreeNode):
@@ -312,25 +352,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         center_in_scene = self.graphicsView.mapToScene(center_in_view)
         x_center, y_center = center_in_scene.x(), center_in_scene.y()
         adinkra = self.adinkra.value
+        # defined 
+        self.nodes = [] 
+        self.edges = []
         if isinstance(adinkra, Adinkra):
-            print("self.adinkra.value is an Adinkra object.")
-            boson_positions = []
-            fermion_positions = []
-            #bosons
-            for i in range(adinkra.adinkra_size[0]):
-                boson_positions.append((x_center+1400 - int((adinkra.adinkra_size[0]/2 + i) * 100), y_center+400*adinkra.boson_elevations[i]))
+            if adinkra.node_positions is None:
+                adinkra.node_positions = []
+                #bosons
+                for i in range(adinkra.adinkra_size[0]):
+                    adinkra.node_positions.append((x_center - int((adinkra.adinkra_size[0]/2 - i) * 100), y_center - 200 +400*adinkra.boson_elevations[i]))
+                #fermions
+                for i in range(adinkra.adinkra_size[1]):
+                    adinkra.node_positions.append((x_center - int((adinkra.adinkra_size[1]/2 - i) * 100), y_center - 200 + 400*adinkra.fermion_elevations[i]))
+
+            if adinkra.custom_node_labels is None or len(adinkra.custom_node_labels) != adinkra.adinkra_size[0] + adinkra.adinkra_size[1]:
+                labels = [str(i) for i in range(adinkra.adinkra_size[0])].extend([str(i) for i in range(adinkra.adinkra_size[1])])
+            else:
+                labels = adinkra.custom_node_labels
             # Create draggable nodes
-            for x, y in boson_positions:
-                node = DraggableBoson(x, y)
-                self.scene.addItem(node)
+            for i, (x, y) in enumerate(adinkra.node_positions[:adinkra.adinkra_size[0]]):
+                node = DraggableBoson(x, y, label = labels[i],fontsize=self.fontsize)
                 self.nodes.append(node)
-            #fermions
-            for i in range(adinkra.adinkra_size[1]):
-                fermion_positions.append((x_center+1400 - int((adinkra.adinkra_size[1]/2 + i) * 100), y_center + 400*adinkra.fermion_elevations[i]))
             # Create draggable nodes
-            for x, y in fermion_positions:
-                node = DraggableFermion(x, y)
-                self.scene.addItem(node)
+            for i, (x, y) in enumerate(adinkra.node_positions[adinkra.adinkra_size[0]:]):
+                node = DraggableFermion(x, y, label = labels[i],fontsize=self.fontsize)
                 self.nodes.append(node)
 
             # Create edges
@@ -340,6 +385,8 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     edge = Edge(self.nodes[i], self.nodes[j+ adinkra.adinkra_size[0]], hue_fl, adinkra.dashing[n,nc])
                     self.scene.addItem(edge)
                     self.edges.append(edge)
+            for i, n in enumerate(self.nodes):
+                self.scene.addItem(n)
 
     def open_library_file(self):
         """Open a file dialog and load file contents."""
@@ -358,7 +405,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
     def save_library_file(self):
         # Check if library is loaded
-        if not hasattr(self, 'library'):
+        if self.library is None:  
             QMessageBox.warning(self, "Warning", "No library loaded to save.")
             return
 
@@ -371,6 +418,35 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file:\n{str(e)}")
 
+    def close_library(self):
+        if self.library is None:
+            QMessageBox.warning(self, "Information", "No library loaded.")
+            return
+        userpressed = self.show_save_option_box()
+        if userpressed == "Save":
+            self.save_library_file()
+        elif userpressed == "Don't Save":
+            pass
+        elif userpressed == "Cancel":
+            return 0
+        self.reset_library()
+        return 0
+
+    def reset_library(self):
+        index = self.treeWidget.indexOfTopLevelItem(self.library)
+        if index != -1:
+            self.treeWidget.takeTopLevelItem(index)
+        self.tableWidget.item(0, 0).setText("    None Loaded")
+        self.tableWidget.item(1, 0).setText("    None Loaded")
+        self.tableWidget.item(2, 0).setText("    None Loaded")
+        self.library = None
+        self.theory = None
+        self.adinkra = None
+        self.nodes = {}
+        self.node_labels = {}
+        self.edges = []
+        self.refresh_graph()
+
     def open_adinkra_file(self):
         """Open a file dialog and load file contents."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "All Files (*);;Adinkra Matrices File (*.csv)") 
@@ -381,7 +457,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             try:
                 adinkra = Adinkra(file_path)    
                 print(f"Opened Adinkra: {file_path}")  # Handle data as needed
-                print(adinkra)
                 return adinkra
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to open file:\n{str(e)}")

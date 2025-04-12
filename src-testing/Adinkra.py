@@ -35,14 +35,16 @@ class Adinkra:
                 num_colors = Ls.shape[0]
                 num_bosons = Ls.shape[1]
                 num_fermions = Ls.shape[2]
-                self.boson_elevations = np.zeros(num_bosons)
-                self.fermion_elevations = np.ones(num_fermions)
+                self.boson_elevations = np.ones(num_bosons)
+                self.fermion_elevations = np.zeros(num_fermions)
                 # Create a list of colored edges of the form [*colors: [*connections [*boson, *fermion, *dashing: +/-1]]...]
                 edges = np.array([[[j, np.nonzero(Ls[i,j])[0][0], Ls[i,j,np.nonzero(Ls[i,j])[0][0]]] for j in range(num_bosons)] for i in range(num_colors)])
                 self.adinkra_colors = num_colors
                 self.adinkra_size = (num_bosons, num_fermions)
                 self.edges = edges[:, :, 0:2]
                 self.dashing = edges[:, :, 2]
+            self.node_positions = None
+            self.custom_node_labels = None
         else:
             print(f"File {path} does not exist.")
     def __repr__(self):
@@ -53,6 +55,6 @@ class Adinkra:
 # Export["/home/gabriel/python_projects/AdinkraWorks/tests/SMw1.csv", {{{Ls, Rs}}}, "CSV"]
 
 # Example Import
-a = Adinkra("/home/gabriel/python_projects/AdinkraWorks/tests/SMw1.csv")
-print(a)
+#a = Adinkra("/home/gabriel/python_projects/AdinkraWorks/tests/SMw1.csv")
+#print(a)
 
