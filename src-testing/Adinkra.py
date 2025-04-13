@@ -43,8 +43,10 @@ class Adinkra:
                 self.adinkra_size = (num_bosons, num_fermions)
                 self.edges = edges[:, :, 0:2]
                 self.dashing = edges[:, :, 2]
-            self.node_positions = None
-            self.custom_node_labels = None
+            self.boson_positions = None
+            self.fermion_positions = None
+            self.boson_labels = None
+            self.fermion_labels = None
         else:
             print(f"File {path} does not exist.")
     def __repr__(self):

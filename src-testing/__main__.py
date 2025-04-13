@@ -1,5 +1,6 @@
 import sys
-from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsView, QGraphicsEllipseItem, QGraphicsLineItem
+from PyQt6 import QtCore, QtGui, QtWidgets
+from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem
 from PyQt6.QtGui import QPen, QColor, QBrush
 from PyQt6.QtCore import Qt
 from SimpleOutput import Ui_MainWindow  # Import the generated UI class
@@ -15,7 +16,30 @@ from PyQt6.QtWidgets import QPushButton
 from rich import print
 from PyQt6.QtWidgets import QGraphicsTextItem
 from PyQt6.QtGui import QFont
+from rich.console import Console
+from rich.traceback import install
 
+console = Console()
+install(show_locals=True)  # Optional: shows local variables
+
+
+import functools
+
+def catch_nicely(func):
+    @functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        #console.log(f"[bold yellow]Calling:[/] {func.__name__} with args={args}, kwargs={kwargs}")
+        try:
+            return func(*args, **kwargs)
+        except Exception:
+            console.print_exception()
+            return None
+    return wrapper
+
+
+
+
+@catch_nicely
 def find_first_adinkra(parent_item):
     for i in range(parent_item.childCount()):
         child = parent_item.child(i)
@@ -24,13 +48,16 @@ def find_first_adinkra(parent_item):
     return None  # Not found
 
 class DraggableBoson(QGraphicsEllipseItem):
-    def __init__(self, x, y, label="", grid_size_x=100, grid_size_y=400, fontsize=12):
+    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, fontsize=12):
         super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
+        self.parent_adinkra = parent_adinkra
+        self.label = label
         self.setBrush(Qt.GlobalColor.white)
         self.setPen(QPen(Qt.GlobalColor.black))
         self.setFlags(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable |
                       QGraphicsEllipseItem.GraphicsItemFlag.ItemSendsGeometryChanges)
-
+        self.scene_x = x
+        self.scene_y = y
         self.grid_size_x = grid_size_x
         self.grid_size_y = grid_size_y
         self.edges = []  # List of connected edges
@@ -41,6 +68,27 @@ class DraggableBoson(QGraphicsEllipseItem):
         self.text_item.setDefaultTextColor(Qt.GlobalColor.black)
         self.center_text()
 
+    def mouseReleaseEvent(self, event):
+        scene = self.scene()
+        if not scene:
+            return super().mouseReleaseEvent(event)
+
+        # Try to find the view displaying this scene
+        views = scene.views()
+        if not views:
+            return super().mouseReleaseEvent(event)
+
+        view = views[0]  # Usually just one view
+        rect = scene.itemsBoundingRect()
+        margin = 200
+        rect.adjust(-margin, -margin, margin, margin)
+        scene.setSceneRect(rect)
+
+        view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        view.centerOn(rect.center())
+
+        return super().mouseReleaseEvent(event)
+
     def center_text(self):
         """Center the text in the ellipse."""
         bounding_rect = self.text_item.boundingRect()
@@ -53,17 +101,21 @@ class DraggableBoson(QGraphicsEllipseItem):
         if change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionChange:
             new_x = round(value.x() / self.grid_size_x) * self.grid_size_x
             new_y = round(value.y() / self.grid_size_y) * self.grid_size_y
+            if self.parent_adinkra is not None:
+                self.parent_adinkra.boson_positions[self.label][0] = self.scene_x + new_x
+                self.parent_adinkra.boson_positions[self.label][1] = self.scene_y + new_y
             return QPointF(new_x, new_y)
 
         elif change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionHasChanged:
             for edge in self.edges:
                 edge.update_position()
-
         return super().itemChange(change, value)
 
 class DraggableFermion(QGraphicsEllipseItem):
-    def __init__(self, x, y, label="", grid_size_x=100, grid_size_y=400, fontsize=12):
+    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, fontsize=12):
         super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
+        self.parent_adinkra = parent_adinkra
+        self.label = label
         self.setBrush(Qt.GlobalColor.black)
         self.setPen(QPen(Qt.GlobalColor.black))
         self.setFlags(QGraphicsEllipseItem.GraphicsItemFlag.ItemIsMovable |
@@ -73,11 +125,34 @@ class DraggableFermion(QGraphicsEllipseItem):
         self.grid_size_y = grid_size_y
         self.edges = []  # List of connected edges
 
+        self.scene_x = x
+        self.scene_y = y
         # Add centered text
         self.text_item = QGraphicsTextItem(label, self)  # Add text as child
         self.text_item.setFont(QFont("Arial", fontsize))
         self.text_item.setDefaultTextColor(Qt.GlobalColor.white)
         self.center_text()
+
+    def mouseReleaseEvent(self, event):
+        scene = self.scene()
+        if not scene:
+            return super().mouseReleaseEvent(event)
+
+        # Try to find the view displaying this scene
+        views = scene.views()
+        if not views:
+            return super().mouseReleaseEvent(event)
+
+        view = views[0]  # Usually just one view
+        rect = scene.itemsBoundingRect()
+        margin = 200
+        rect.adjust(-margin, -margin, margin, margin)
+        scene.setSceneRect(rect)
+
+        view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+        view.centerOn(rect.center())
+
+        return super().mouseReleaseEvent(event)
 
     def center_text(self):
         """Center the text in the ellipse."""
@@ -91,6 +166,10 @@ class DraggableFermion(QGraphicsEllipseItem):
         if change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionChange:
             new_x = round(value.x() / self.grid_size_x) * self.grid_size_x
             new_y = round(value.y() / self.grid_size_y) * self.grid_size_y
+            if self.parent_adinkra is not None:
+                self.parent_adinkra.fermion_positions[self.label][0] = self.scene_x + new_x
+                self.parent_adinkra.fermion_positions[self.label][1] = self.scene_y + new_y
+
             return QPointF(new_x, new_y)
 
         elif change == QGraphicsEllipseItem.GraphicsItemChange.ItemPositionHasChanged:
@@ -182,18 +261,24 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         # self setup graphics
         self.setupUi(self)
         self.refresh_graph()
-        self.graphicsView.scale(0.5, 0.5)  # Zoom out 2x
+        #self.graphicsView.scale(0.5, 0.5)  # Zoom out 2x
 
         # Connect menu actions to functions
-        self.actionOpen_Library.triggered.connect(self.open_library_file)
-        self.actionClose.triggered.connect(self.close_library)
-        self.actionSave_Library.triggered.connect(self.save_library_file)
-        self.actionCreate_Theory.triggered.connect(self.add_theory)
-        self.actionImportAdinkra.triggered.connect(self.import_adinkra)
-        self.actionCreate_Library.triggered.connect(self.new_library)
-        self.actionComment.triggered.connect(self.add_comment)
-        self.treeWidget.itemSelectionChanged.connect(self.on_item_selected)
+        self.actionOpen_Library.triggered.connect(self.wrap_for_trigger(self.open_library_file))
+        self.actionClose.triggered.connect(self.wrap_for_trigger(self.close_library))
+        self.actionSave_Library.triggered.connect(self.wrap_for_trigger(self.save_library_file))
+        self.actionCreate_Theory.triggered.connect(self.wrap_for_trigger(self.add_theory))
+        self.actionImportAdinkra.triggered.connect(self.wrap_for_trigger(self.import_adinkra))
+        self.actionCreate_Library.triggered.connect(self.wrap_for_trigger(self.new_library))
+        self.actionComment.triggered.connect(self.wrap_for_trigger(self.add_comment))
+        self.treeWidget.itemSelectionChanged.connect(self.wrap_for_trigger(self.on_item_selected))
 
+    def wrap_for_trigger(self, fn):
+        def wrapped(*_):  # Ignore any signal arguments
+            return fn()
+        return wrapped
+
+    @catch_nicely
     def get_user_input(self, window_title, default_value):
         """Show a larger floating text input box."""
         dialog = QInputDialog(self)
@@ -206,6 +291,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return text
         return None
 
+    @catch_nicely
     def on_item_selected(self):
         selected_item = self.treeWidget.currentItem()
         if not selected_item:
@@ -257,6 +343,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 tableitem.setText("    None")
             self.refresh_graph()
 
+    @catch_nicely
     def refresh_graph(self):
         if self.theory is not None and self.adinkra is not None:
             self.scene = QGraphicsScene()
@@ -267,45 +354,34 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             self.draw_graph()
     
+    @catch_nicely
     def new_library(self):
-        try:
-#            if self.library is not None:
-                #userpressed = self.show_save_option_box()
-                #if userpressed == "Save":
-                    #self.save_library_file()
-                #elif userpressed == "Don't Save":
-                    #pass
-                #elif userpressed == "Cancel":
-                    #return 0
-            #self.reset_library()
-            name = self.get_user_input("Creating new Library: Enter Library Name", "Library Name")
-            if name:  # If the user pressed OK and entered text
-                self.library = TreeNode(name)
-                self.treeWidget.addTopLevelItem(self.library)
-                self.theory = None
-                self.adinkra = None
-                QMessageBox.information(self, "Note", f"New Library: {name} created.")
-                return 0
-            else:
-                raise Exception("No name provided for the new library.")
-             
-        except Exception as e:
-            ic(f"Exception Caught: {e}")
-            QMessageBox.information(self, "Note", f"No Library Created:\n{str(e)}")
+        name = self.get_user_input("Creating new Library: Enter Library Name", "Library Name")
+        if name:  # If the user pressed OK and entered text
+            self.library = TreeNode(name)
+            self.treeWidget.addTopLevelItem(self.library)
+            self.theory = None
+            self.adinkra = None
+            QMessageBox.information(self, "Note", f"New Library: {name} created.")
+            self.treeWidget.expandAll()
+            return 0
+        else:
+            QMessageBox.information(self, "Note", f"No Library Created")
             return 1
 
+    @catch_nicely
     def add_theory(self):
-        try:
             """check for existence of a library."""
             if not isinstance(self.library, TreeNode):
                 buttonpressed = self.show_create_library_option_box()
                 if buttonpressed == "Yes":
                     if self.new_library():
-                        raise Exception("Library not created")
+                        QMessageBox.information(self, "Note", f"No Theory Created")
+                        return
                 elif buttonpressed == "No":
-                    return 0
+                    return 
                 elif buttonpressed == "Cancel":
-                    return 0
+                    return 
             """Add a new theory to the library."""
             theory_name = self.get_user_input("New Theory in Current Library", "Theory Name")
             if theory_name:
@@ -313,70 +389,84 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 self.library.addChild(new_theory)
                 self.theory = new_theory
                 QMessageBox.information(self, "Note", f"New Theory: {theory_name} created.")
+                self.treeWidget.expandAll()
             else:
-                raise Exception("No name provided for the new theory.")
-        except Exception as e:
-            ic(f"Exception Caught: {e}")
-            QMessageBox.information(self, "Note", f"No Theory Created:\n{str(e)}")
+                QMessageBox.information(self, "Note", f"No Theory Created")
+                return
     
+    @catch_nicely
     def add_comment(self):
-        try:
-            pass
-        except Exception as e:
-            ic(f"Exception Caught: {e}")
-            QMessageBox.information(self, "Note", f"No Comment Created:\n{str(e)}")
+        return
 
+    @catch_nicely
     def import_adinkra(self):
-        try:
             if not isinstance(self.theory, TreeNode):
                 if self.add_theory():
-                    raise Exception("Theory not created")
+                    QMessageBox.information(self, "Note", f"No Adinkra Created")
+                    return
+            adinkra_name = self.get_user_input("New Adinkra in Current Theory", "Adinkra Name")
+            if adinkra_name is None:
+                QMessageBox.information(self, "Note", f"No Adinkra Created")
+                return
             """Add an Adinkra to the library."""
             adinkra = self.open_adinkra_file()
             if adinkra:
-                adinkra_name = self.get_user_input("New Adinkra in Current Theory", "Adinkra Name")
                 self.adinkra = TreeNode(adinkra_name, value=adinkra)
                 self.theory.addChild(self.adinkra)
                 self.refresh_graph()
+                tableitem = self.tableWidget.item(2, 0)
+                tableitem.setText(f"    {self.adinkra.text(0)} ")
                 QMessageBox.information(self, "Note", f"New Adinkra: {adinkra_name} created.")
+                self.treeWidget.expandAll()
             else:
-                raise Exception("No Adinkra provided.")
-        except Exception as e:
-            ic(f"Exception Caught: {e}")
-            QMessageBox.information(self, "Note", f"No Adinkra Created:\n{str(e)}")
+                QMessageBox.information(self, "Note", f"No Adinkra Created")
+                return
 
+    @catch_nicely
     def draw_graph(self):
         # initialize positions for Fermions and Bosons
-        view_rect = self.graphicsView.viewport().rect()  # Visible area in view coordinates
-        center_in_view = view_rect.center()  # Center in view coordinates
-        center_in_scene = self.graphicsView.mapToScene(center_in_view)
-        x_center, y_center = center_in_scene.x(), center_in_scene.y()
+        x_center, y_center = 1000,1000 
         adinkra = self.adinkra.value
-        # defined 
+        # defined for viewing 
         self.nodes = [] 
         self.edges = []
         if isinstance(adinkra, Adinkra):
-            if adinkra.node_positions is None:
-                adinkra.node_positions = []
+
+            if adinkra.boson_labels is None or len(adinkra.boson_labels) != adinkra.adinkra_size[0]:
+                boson_labels = [str(i) for i in range(adinkra.adinkra_size[0])]
+            else:
+                boson_labels = adinkra.boson_labels
+
+            if adinkra.fermion_labels is None or len(adinkra.fermion_labels) != adinkra.adinkra_size[1]:
+                fermion_labels = [str(i) for i in range(adinkra.adinkra_size[1])]
+            else:
+                fermion_labels = adinkra.fermion_labels
+
+            if adinkra.boson_positions is None or adinkra.fermion_positions is None:
+                adinkra.boson_positions = {}
+                adinkra.fermion_positions = {}
                 #bosons
                 for i in range(adinkra.adinkra_size[0]):
-                    adinkra.node_positions.append((x_center - int((adinkra.adinkra_size[0]/2 - i) * 100), y_center - 200 +400*adinkra.boson_elevations[i]))
+                    adinkra.boson_positions[boson_labels[i]] = [x_center - int((adinkra.adinkra_size[0]/2 - i) * 100), y_center - 200 +400*adinkra.boson_elevations[i]]
                 #fermions
                 for i in range(adinkra.adinkra_size[1]):
-                    adinkra.node_positions.append((x_center - int((adinkra.adinkra_size[1]/2 - i) * 100), y_center - 200 + 400*adinkra.fermion_elevations[i]))
+                    adinkra.fermion_positions[fermion_labels[i]] = [x_center - int((adinkra.adinkra_size[1]/2 - i) * 100), y_center - 200 + 400*adinkra.fermion_elevations[i]]
 
-            if adinkra.custom_node_labels is None or len(adinkra.custom_node_labels) != adinkra.adinkra_size[0] + adinkra.adinkra_size[1]:
-                labels = [str(i) for i in range(adinkra.adinkra_size[0])].extend([str(i) for i in range(adinkra.adinkra_size[1])])
-            else:
-                labels = adinkra.custom_node_labels
             # Create draggable nodes
-            for i, (x, y) in enumerate(adinkra.node_positions[:adinkra.adinkra_size[0]]):
-                node = DraggableBoson(x, y, label = labels[i],fontsize=self.fontsize)
+            for i, (x, y) in enumerate(adinkra.boson_positions.values()):
+                node = DraggableBoson(x, y, label = boson_labels[i], parent_adinkra=adinkra,fontsize=self.fontsize)
                 self.nodes.append(node)
             # Create draggable nodes
-            for i, (x, y) in enumerate(adinkra.node_positions[adinkra.adinkra_size[0]:]):
-                node = DraggableFermion(x, y, label = labels[i],fontsize=self.fontsize)
+            for i, (x, y) in enumerate(adinkra.fermion_positions.values()):
+                node = DraggableFermion(x, y, label = fermion_labels[i], parent_adinkra=adinkra,fontsize=self.fontsize)
                 self.nodes.append(node)
+            # Update scene
+            rect = self.scene.itemsBoundingRect()
+            margin = 200
+            rect.adjust(-margin, -margin, margin, margin)
+            self.scene.setSceneRect(rect)
+            self.graphicsView.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+            self.graphicsView.centerOn(rect.center())
 
             # Create edges
             for n, edges in enumerate(adinkra.edges):
@@ -385,9 +475,16 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     edge = Edge(self.nodes[i], self.nodes[j+ adinkra.adinkra_size[0]], hue_fl, adinkra.dashing[n,nc])
                     self.scene.addItem(edge)
                     self.edges.append(edge)
-            for i, n in enumerate(self.nodes):
-                self.scene.addItem(n)
-
+            for i, nd in enumerate(self.nodes):
+                self.scene.addItem(nd)
+            rect = self.scene.itemsBoundingRect()
+            margin = 200
+            rect.adjust(-margin, -margin, margin, margin)
+            self.scene.setSceneRect(rect)
+            self.graphicsView.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+            self.graphicsView.centerOn(rect.center())
+    
+    @catch_nicely
     def open_library_file(self):
         """Open a file dialog and load file contents."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "All Files (*);;Adinkra Library (*.pkl)") 
@@ -397,12 +494,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if os.path.splitext(file_path)[1]==".pkl":
             try:
                 self.library = TreeNode.load_tree(self.treeWidget, file_path)
-                print(f"Opened file: {file_path}")  # Handle data as needed
+                QMessageBox.information(self, "Information", f"Opened file: {file_path}")
+                self.treeWidget.expandAll()
+                return
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to open file:\n{str(e)}")
+                return
         else:
             QMessageBox.warning(self, "Warning", "File type not supported. Please select an Adinkra Library (.pkl) file.")
+            return
 
+    @catch_nicely
     def save_library_file(self):
         # Check if library is loaded
         if self.library is None:  
@@ -414,10 +516,13 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         if file_path:
             try:
                 self.library.save_tree(file_path)
-                print(f"Saved file: {file_path}")
+                QMessageBox.information(self, "Information", f"Saved file: {file_path}")
+                return
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file:\n{str(e)}")
+                return
 
+    @catch_nicely
     def close_library(self):
         if self.library is None:
             QMessageBox.warning(self, "Information", "No library loaded.")
@@ -428,10 +533,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         elif userpressed == "Don't Save":
             pass
         elif userpressed == "Cancel":
-            return 0
+            return
         self.reset_library()
-        return 0
+        return
 
+    @catch_nicely
     def reset_library(self):
         index = self.treeWidget.indexOfTopLevelItem(self.library)
         if index != -1:
@@ -442,11 +548,12 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.library = None
         self.theory = None
         self.adinkra = None
-        self.nodes = {}
+        self.nodes = []
         self.node_labels = {}
         self.edges = []
         self.refresh_graph()
 
+    @catch_nicely
     def open_adinkra_file(self):
         """Open a file dialog and load file contents."""
         file_path, _ = QFileDialog.getOpenFileName(self, "Open File", "", "All Files (*);;Adinkra Matrices File (*.csv)") 
@@ -463,6 +570,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             QMessageBox.warning(self, "Warning", "File type not supported. Please select an Adinkra Matrices (.csv) file.")
     
+    @catch_nicely
     def show_save_option_box(self):
         msg = QMessageBox(self)
         msg.setWindowTitle("Do you wish to save your current Library?")
@@ -484,7 +592,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         else:
             return None
 
-
+    @catch_nicely
     def show_create_library_option_box(self):
         msg = QMessageBox(self)
         msg.setWindowTitle("No current Library: Create a new one?")
