@@ -8,22 +8,82 @@
 
 from PyQt6 import QtCore, QtGui, QtWidgets
 
+class CustomGraphicsView(QtWidgets.QGraphicsView):
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        # Your existing setup
+        self.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.setDragMode(QtWidgets.QGraphicsView.DragMode.ScrollHandDrag)
+        self.setRenderHints(QtGui.QPainter.RenderHint.Antialiasing|
+                           QtGui.QPainter.RenderHint.SmoothPixmapTransform|
+                           QtGui.QPainter.RenderHint.TextAntialiasing)
+    
+    def wheelEvent(self, event):
+        modifiers = event.modifiers()
+        
+        if modifiers & QtCore.Qt.KeyboardModifier.ControlModifier:
+            # Ctrl + Wheel = Zoom
+            zoom_in_factor = 1.15
+            zoom_out_factor = 1 / zoom_in_factor
+            
+            # Get mouse position in scene coordinates
+            old_pos = self.mapToScene(event.position().toPoint())
+            
+            # Apply zoom
+            if event.angleDelta().y() > 0:
+                zoom_factor = zoom_in_factor
+            else:
+                zoom_factor = zoom_out_factor
+                
+            self.scale(zoom_factor, zoom_factor)
+            
+            # Keep point under cursor stationary
+            new_pos = self.mapToScene(event.position().toPoint())
+            delta = new_pos - old_pos
+            self.translate(delta.x(), delta.y())
+            
+        elif modifiers & QtCore.Qt.KeyboardModifier.ShiftModifier:
+            # Shift + Wheel = Horizontal scroll
+            # Create a horizontal wheel event
+            horizontal_event = QtGui.QWheelEvent(
+                event.position(),
+                event.globalPosition(),
+                QtCore.QPoint(event.angleDelta().y(), 0),  # Swap x/y
+                QtCore.QPoint(0, 0),
+                QtCore.Qt.MouseButton.NoButton,
+                QtCore.Qt.KeyboardModifier.NoModifier,
+                event.phase(),
+                event.inverted()
+            )
+            super().wheelEvent(horizontal_event)
+            
+        else:
+            # No modifier = Default vertical scroll
+            super().wheelEvent(event)
 
 class Ui_MainWindow(object):
     def setupUi(self, MainWindow):
         MainWindow.setObjectName("MainWindow")
-        MainWindow.resize(2036, 1129)
+        # Instead of:
+        # MainWindow.resize(2036, 1129)
+
+        # Use responsive sizing:
+        screen = QtWidgets.QApplication.primaryScreen().availableGeometry()
+        MainWindow.resize(int(screen.width() * 0.9), int(screen.height() * 0.85))
         MainWindow.setDocumentMode(False)
         MainWindow.setUnifiedTitleAndToolBarOnMac(True)
+        
         self.centralwidget = QtWidgets.QWidget(parent=MainWindow)
         self.centralwidget.setObjectName("centralwidget")
-        self.horizontalLayoutWidget = QtWidgets.QWidget(parent=self.centralwidget)
-        self.horizontalLayoutWidget.setGeometry(QtCore.QRect(10, 130, 2021, 961))
-        self.horizontalLayoutWidget.setObjectName("horizontalLayoutWidget")
-        self.horizontalLayout = QtWidgets.QHBoxLayout(self.horizontalLayoutWidget)
+
+        self.horizontalLayout = QtWidgets.QHBoxLayout()
         self.horizontalLayout.setContentsMargins(0, 0, 0, 0)
         self.horizontalLayout.setObjectName("horizontalLayout")
-        self.treeWidget = QtWidgets.QTreeWidget(parent=self.horizontalLayoutWidget)
+        
+        self.treeWidget = QtWidgets.QTreeWidget(parent=self.centralwidget)
+        self.graphicsView = CustomGraphicsView(parent=self.centralwidget)
+
         sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
         sizePolicy.setHorizontalStretch(1)
         sizePolicy.setVerticalStretch(0)
@@ -31,23 +91,26 @@ class Ui_MainWindow(object):
         self.treeWidget.setSizePolicy(sizePolicy)
         self.treeWidget.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored)
         self.treeWidget.setObjectName("treeWidget")
-        self.horizontalLayout.addWidget(self.treeWidget)
-        self.graphicsView = QtWidgets.QGraphicsView(parent=self.horizontalLayoutWidget)
-        self.graphicsView.setEnabled(True)
-        sizePolicy = QtWidgets.QSizePolicy(QtWidgets.QSizePolicy.Policy.Expanding, QtWidgets.QSizePolicy.Policy.Expanding)
+        
+
         sizePolicy.setHorizontalStretch(5)
         sizePolicy.setVerticalStretch(0)
         sizePolicy.setHeightForWidth(self.graphicsView.sizePolicy().hasHeightForWidth())
+        
+        self.graphicsView.setEnabled(True)
         self.graphicsView.setSizePolicy(sizePolicy)
-        self.graphicsView.viewport().setProperty("cursor", QtGui.QCursor(QtCore.Qt.CursorShape.OpenHandCursor))
+        #self.graphicsView.viewport().setProperty("cursor", QtGui.QCursor(QtCore.Qt.CursorShape.OpenHandCursor))
         self.graphicsView.setAutoFillBackground(True)
         self.graphicsView.setVerticalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.graphicsView.setHorizontalScrollBarPolicy(QtCore.Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.graphicsView.setSizeAdjustPolicy(QtWidgets.QAbstractScrollArea.SizeAdjustPolicy.AdjustIgnored)
-        self.graphicsView.setSceneRect(QtCore.QRectF(0.0, 0.0, 0.0, 0.0))
+
+        #self.graphicsView.setSceneRect(QtCore.QRectF(0.0, 0.0, 0.0, 0.0))
         self.graphicsView.setRenderHints(QtGui.QPainter.RenderHint.Antialiasing|QtGui.QPainter.RenderHint.SmoothPixmapTransform|QtGui.QPainter.RenderHint.TextAntialiasing)
-        self.graphicsView.setDragMode(QtWidgets.QGraphicsView.DragMode.NoDrag)
+        self.graphicsView.setDragMode(QtWidgets.QGraphicsView.DragMode.ScrollHandDrag)
         self.graphicsView.setObjectName("graphicsView")
+        self.graphicsView.setMouseTracking(True)
+        self.horizontalLayout.addWidget(self.treeWidget)
         self.horizontalLayout.addWidget(self.graphicsView)
         self.horizontalLayoutWidget_2 = QtWidgets.QWidget(parent=self.centralwidget)
         self.horizontalLayoutWidget_2.setGeometry(QtCore.QRect(10, 10, 2021, 111))
@@ -216,6 +279,10 @@ class Ui_MainWindow(object):
         self.menubar.addAction(self.menuLibraries.menuAction())
         self.menubar.addAction(self.menuDelete.menuAction())
         self.menubar.addAction(self.menuHelp.menuAction())
+
+        main_layout = QtWidgets.QVBoxLayout(self.centralwidget)
+        main_layout.addLayout(self.horizontalLayout)
+        main_layout.setContentsMargins(10, 130, 10, 10)  # Maintains your original margins
 
         self.retranslateUi(MainWindow)
         QtCore.QMetaObject.connectSlotsByName(MainWindow)

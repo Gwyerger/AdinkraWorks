@@ -82,10 +82,11 @@ class DraggableBoson(QGraphicsEllipseItem):
         rect = scene.itemsBoundingRect()
         margin = 200
         rect.adjust(-margin, -margin, margin, margin)
-        scene.setSceneRect(rect)
-
         view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
         view.centerOn(rect.center())
+
+        rect.adjust(-2*rect.width(), -2*rect.height(), 2*rect.width(), 2*rect.height())
+        scene.setSceneRect(rect)
 
         return super().mouseReleaseEvent(event)
 
@@ -146,12 +147,11 @@ class DraggableFermion(QGraphicsEllipseItem):
         view = views[0]  # Usually just one view
         rect = scene.itemsBoundingRect()
         margin = 200
-        rect.adjust(-margin, -margin, margin, margin)
-        scene.setSceneRect(rect)
-
+        rect.adjust(-2*margin, -2*margin, 2*margin, 2*margin)
         view.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
         view.centerOn(rect.center())
-
+        rect.adjust(-rect.width(), -rect.height(), rect.width(), rect.height())
+        scene.setSceneRect(rect)
         return super().mouseReleaseEvent(event)
 
     def center_text(self):
@@ -260,8 +260,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.fontsize = 24
         # self setup graphics
         self.setupUi(self)
-        self.refresh_graph()
-        #self.graphicsView.scale(0.5, 0.5)  # Zoom out 2x
+        self.refresh_graph(init=True)
 
         # Connect menu actions to functions
         self.actionOpen_Library.triggered.connect(self.wrap_for_trigger(self.open_library_file))
@@ -311,7 +310,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             tableitem = self.tableWidget.item(2, 0)
             tableitem.setText(f"    {self.adinkra.text(0)} ")
             
-            self.refresh_graph()
+            self.refresh_graph(init=True)
 
         elif isinstance(selected_item, TreeNode):
             # Access the theory node level
@@ -341,10 +340,10 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 tableitem = self.tableWidget.item(2, 0)
                 tableitem.setText("    None")
-            self.refresh_graph()
+            self.refresh_graph(init = True)
 
     @catch_nicely
-    def refresh_graph(self):
+    def refresh_graph(self, init:bool=False):
         if self.theory is not None and self.adinkra is not None:
             self.scene = QGraphicsScene()
             self.scene.setSceneRect(0, 0, 2000, 2000)  # Large scene size
@@ -352,7 +351,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.graphicsView.setScene(self.scene)
             self.graphicsView.setBackgroundBrush(QBrush(QColor(255, 255, 255, 255)))
 
-            self.draw_graph()
+            self.draw_graph(init = init)
     
     @catch_nicely
     def new_library(self):
@@ -366,7 +365,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             self.treeWidget.expandAll()
             return 0
         else:
-            QMessageBox.information(self, "Note", f"No Library Created")
             return 1
 
     @catch_nicely
@@ -376,12 +374,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 buttonpressed = self.show_create_library_option_box()
                 if buttonpressed == "Yes":
                     if self.new_library():
-                        QMessageBox.information(self, "Note", f"No Theory Created")
-                        return
+                        return 1
                 elif buttonpressed == "No":
-                    return 
+                    return 1
                 elif buttonpressed == "Cancel":
-                    return 
+                    return 1
             """Add a new theory to the library."""
             theory_name = self.get_user_input("New Theory in Current Library", "Theory Name")
             if theory_name:
@@ -391,7 +388,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 QMessageBox.information(self, "Note", f"New Theory: {theory_name} created.")
                 self.treeWidget.expandAll()
             else:
-                QMessageBox.information(self, "Note", f"No Theory Created")
                 return
     
     @catch_nicely
@@ -423,7 +419,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 return
 
     @catch_nicely
-    def draw_graph(self):
+    def draw_graph(self, init:bool=False):
         # initialize positions for Fermions and Bosons
         x_center, y_center = 1000,1000 
         adinkra = self.adinkra.value
@@ -460,13 +456,6 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             for i, (x, y) in enumerate(adinkra.fermion_positions.values()):
                 node = DraggableFermion(x, y, label = fermion_labels[i], parent_adinkra=adinkra,fontsize=self.fontsize)
                 self.nodes.append(node)
-            # Update scene
-            rect = self.scene.itemsBoundingRect()
-            margin = 200
-            rect.adjust(-margin, -margin, margin, margin)
-            self.scene.setSceneRect(rect)
-            self.graphicsView.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
-            self.graphicsView.centerOn(rect.center())
 
             # Create edges
             for n, edges in enumerate(adinkra.edges):
@@ -477,12 +466,14 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                     self.edges.append(edge)
             for i, nd in enumerate(self.nodes):
                 self.scene.addItem(nd)
-            rect = self.scene.itemsBoundingRect()
-            margin = 200
-            rect.adjust(-margin, -margin, margin, margin)
-            self.scene.setSceneRect(rect)
-            self.graphicsView.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
-            self.graphicsView.centerOn(rect.center())
+            if init:
+                rect = self.scene.itemsBoundingRect()
+                margin = 200
+                rect.adjust(-margin, -margin, margin, margin)
+                self.graphicsView.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
+                self.graphicsView.centerOn(rect.center())
+                rect.adjust(-2*rect.width(), -2*rect.height(), 2*rect.width(), 2*rect.height())
+                self.scene.setSceneRect(rect)
     
     @catch_nicely
     def open_library_file(self):
