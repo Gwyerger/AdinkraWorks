@@ -271,6 +271,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionCreate_Library.triggered.connect(self.wrap_for_trigger(self.new_library))
         self.actionComment.triggered.connect(self.wrap_for_trigger(self.add_comment))
         self.treeWidget.itemSelectionChanged.connect(self.wrap_for_trigger(self.on_item_selected))
+        self.actionAdinkra_as_Image.triggered.connect(self.wrap_for_trigger(self.export_graphics))
 
     def wrap_for_trigger(self, fn):
         def wrapped(*_):  # Ignore any signal arguments
@@ -604,6 +605,159 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return "Cancel"
         else:
             return None
+
+    @catch_nicely
+    def export_graphics(self):
+        """Export graphics with user choice of scope and format"""
+        
+        # Check if graphics view/scene exists
+        if not hasattr(self, 'graphicsView') or not hasattr(self, 'scene'):
+            QMessageBox.warning(self, "Warning", "No graphics view available to export.")
+            return
+        
+        if self.scene is None or self.graphicsView is None:
+            QMessageBox.warning(self, "Warning", "Graphics view not properly initialized.")
+            return
+        
+        # First dialog: Choose export scope (Full Scene vs Current View)
+        scope_options = ["Full Scene (all content)", "Current View (visible area only)"]
+        scope_choice, scope_ok = QInputDialog.getItem(
+            self, 
+            "Export Scope", 
+            "Choose what to export:", 
+            scope_options, 
+            0, 
+            False
+        )
+        
+        if not scope_ok:
+            return  # User cancelled
+        
+        export_full_scene = scope_choice.startswith("Full Scene")
+        
+        default_name = f"{self.theory.text(0)}-{self.adinkra.text(0)}"
+        
+        # File dialog for format and location
+        file_path, selected_filter = QFileDialog.getSaveFileName(
+            self, 
+            "Export Graphics", 
+            f"{default_name}.png", 
+            "PNG Image (*.png);;SVG Vector (*.svg)"
+        )
+        
+        if not file_path:
+            return  # User cancelled
+        
+        try:
+            # Determine format from selected filter or file extension
+            if selected_filter.startswith("SVG") or file_path.lower().endswith('.svg'):
+                # SVG Export
+                if export_full_scene:
+                    success = GraphicsExporter.export_scene_to_svg(self.scene, file_path)
+                else:
+                    success = GraphicsExporter.export_view_to_svg(self.graphicsView, file_path)
+            else:
+                # PNG Export (default)
+                if export_full_scene:
+                    success = GraphicsExporter.export_scene_to_image(self.scene, file_path, format='PNG')
+                else:
+                    success = GraphicsExporter.export_view_to_image(self.graphicsView, file_path, format='PNG')
+            
+            if success:
+                QMessageBox.information(self, "Information", f"Successfully exported: {file_path}")
+            else:
+                QMessageBox.critical(self, "Error", "Failed to export graphics file.")
+                
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to export graphics:\n{str(e)}")
+
+
+class GraphicsExporter:
+    """Utility class for exporting QGraphicsView/QGraphicsScene"""
+    
+    @staticmethod
+    def export_scene_to_image(scene, filename, width=None, height=None, margin = 20, format='PNG'):
+        """Export QGraphicsScene to image file"""
+        scene_rect = scene.itemsBoundingRect()
+        scene_rect.adjust(-margin, -margin, margin, margin)
+        if width is None or height is None:
+            output_size = scene_rect.size().toSize()
+        else:
+            output_size = QtCore.QSize(width, height)
+        
+        image = QtGui.QImage(output_size, QtGui.QImage.Format.Format_ARGB32)
+        image.fill(QtCore.Qt.GlobalColor.white)
+        
+        painter = QtGui.QPainter(image)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        scene.render(painter, QtCore.QRectF(image.rect()), scene_rect)
+        painter.end()
+        
+        return image.save(filename, format)
+    
+    @staticmethod
+    def export_view_to_image(graphics_view, filename, format='PNG'):
+        """Export current view to image file"""
+        viewport_rect = graphics_view.viewport().rect()
+        
+        image = QtGui.QImage(viewport_rect.size(), QtGui.QImage.Format.Format_ARGB32)
+        image.fill(QtCore.Qt.GlobalColor.white)
+        
+        painter = QtGui.QPainter(image)
+        graphics_view.render(painter)
+        painter.end()
+        
+        return image.save(filename, format)
+    
+    @staticmethod
+    def export_scene_to_svg(scene, filename, margin=20):
+        """Export QGraphicsScene to SVG"""
+        try:
+            from PyQt6.QtSvg import QSvgGenerator
+        except ImportError:
+            raise ImportError("SVG export requires PyQt6.QtSvg module")
+        
+        # Use the same scene rectangle calculation as PNG export
+        scene_rect = scene.itemsBoundingRect()
+        scene_rect.adjust(-margin, -margin, margin, margin)
+        
+        svg_generator = QSvgGenerator()
+        svg_generator.setFileName(filename)
+        svg_generator.setSize(scene_rect.size().toSize())
+        svg_generator.setViewBox(QtCore.QRectF(0, 0, scene_rect.width(), scene_rect.height()))
+        svg_generator.setTitle("Graphics Scene Export")
+        svg_generator.setDescription("Exported from QGraphicsScene")
+        
+        # Use the same painter setup and render call as PNG export
+        painter = QtGui.QPainter(svg_generator)
+        painter.setRenderHint(QtGui.QPainter.RenderHint.Antialiasing)
+        scene.render(painter, QtCore.QRectF(0, 0, scene_rect.width(), scene_rect.height()), scene_rect)
+        painter.end()
+        
+        return True
+
+    @staticmethod
+    def export_view_to_svg(graphics_view, filename):
+        """Export current view to SVG"""
+        try:
+            from PyQt6.QtSvg import QSvgGenerator
+        except ImportError:
+            raise ImportError("SVG export requires PyQt6.QtSvg module")
+        
+        viewport_rect = graphics_view.viewport().rect()
+        
+        svg_generator = QSvgGenerator()
+        svg_generator.setFileName(filename)
+        svg_generator.setSize(viewport_rect.size())
+        svg_generator.setViewBox(QtCore.QRectF(viewport_rect))
+        svg_generator.setTitle("Graphics View Export")
+        svg_generator.setDescription("Exported from QGraphicsView")
+        
+        painter = QtGui.QPainter(svg_generator)
+        graphics_view.render(painter)
+        painter.end()
+        
+        return True
 
 
 if __name__ == "__main__":
