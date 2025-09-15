@@ -1,23 +1,33 @@
 import sys
-from PyQt6 import QtCore, QtGui, QtWidgets
-from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem
-from PyQt6.QtGui import QPen, QColor, QBrush
-from PyQt6.QtCore import Qt
-from SimpleOutput import Ui_MainWindow  # Import the generated UI class
-from PyQt6.QtCore import QPointF
 import os
 import pickle
 from icecream import ic 
+
+from PyQt6 import QtCore, QtGui, QtWidgets
+
+from PyQt6.QtGui import QPen, QColor, QBrush, QPainter, QPolygonF
+from PyQt6.QtGui import QFont, QFontDatabase
+
+from PyQt6.QtCore import Qt, QPointF
+from PyQt6.QtCore import QPoint, QRectF
+from PyQt6.QtCore import pyqtSignal
+
+from SimpleOutput import Ui_MainWindow  # Import the generated UI class
+
+from PyQt6.QtWidgets import QApplication, QMainWindow, QGraphicsScene, QGraphicsEllipseItem, QGraphicsLineItem
 from PyQt6.QtWidgets import QTreeWidgetItem
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtWidgets import QInputDialog
+from PyQt6.QtWidgets import QWidget, QVBoxLayout, QHBoxLayout, QSpinBox, QLabel, QPushButton
+from PyQt6.QtWidgets import QListWidget, QListWidgetItem, QSlider, QDialog, QGroupBox, QFrame, QFontComboBox, QLabel, QTextEdit
+from PyQt6.QtWidgets import QGraphicsTextItem, QComboBox
+from PyQt6.QtCore import pyqtSignal as Signal
+                               
 from Adinkra import Adinkra
-from PyQt6.QtWidgets import QPushButton
 from rich import print
-from PyQt6.QtWidgets import QGraphicsTextItem
-from PyQt6.QtGui import QFont
 from rich.console import Console
 from rich.traceback import install
+import math
 
 console = Console()
 install(show_locals=True)  # Optional: shows local variables
@@ -36,9 +46,6 @@ def catch_nicely(func):
             return None
     return wrapper
 
-
-
-
 @catch_nicely
 def find_first_adinkra(parent_item):
     for i in range(parent_item.childCount()):
@@ -48,7 +55,7 @@ def find_first_adinkra(parent_item):
     return None  # Not found
 
 class DraggableBoson(QGraphicsEllipseItem):
-    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, fontsize=12):
+    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, fontstyle = "Arial", fontsize=12):
         super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
         self.parent_adinkra = parent_adinkra
         self.label = label
@@ -64,7 +71,7 @@ class DraggableBoson(QGraphicsEllipseItem):
 
         # Add centered text
         self.text_item = QGraphicsTextItem(label, self)  # Add text as child
-        self.text_item.setFont(QFont("Arial", fontsize))
+        self.text_item.setFont(QFont(fontstyle, fontsize))
         self.text_item.setDefaultTextColor(Qt.GlobalColor.black)
         self.center_text()
 
@@ -184,15 +191,14 @@ class Edge(QGraphicsLineItem):
         super().__init__()
         self.node1 = node1
         self.node2 = node2
-        self.color = color
+        self.color = color 
         self.dashing = dashing
         if self.dashing == 1:
             style = Qt.PenStyle.DashLine
         else:
             style = Qt.PenStyle.SolidLine
         
-        qcolor = QColor.fromHsv(int(359*color), 255, 255, alpha=255)
-        self.setPen(QPen(qcolor, 3, style))
+        self.setPen(QPen(color, 3, style))
         # Attach this edge to the nodes
         node1.edges.append(self)
         node2.edges.append(self)
@@ -258,6 +264,7 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.theory = None
         self.adinkra = None
         self.fontsize = 24
+        self.current_font = None
         # self setup graphics
         self.setupUi(self)
         self.refresh_graph(init=True)
@@ -272,6 +279,9 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.actionComment.triggered.connect(self.wrap_for_trigger(self.add_comment))
         self.treeWidget.itemSelectionChanged.connect(self.wrap_for_trigger(self.on_item_selected))
         self.actionAdinkra_as_Image.triggered.connect(self.wrap_for_trigger(self.export_graphics))
+        self.actionColorsDefinition.triggered.connect(self.wrap_for_trigger(self.pick_colors_def))
+        self.actionColorsIndividual.triggered.connect(self.wrap_for_trigger(self.pick_colors_ind))
+        self.actionLabeling.triggered.connect(self.wrap_for_trigger(self.open_font_dialog))
 
     def wrap_for_trigger(self, fn):
         def wrapped(*_):  # Ignore any signal arguments
@@ -460,21 +470,30 @@ class MainWindow(QMainWindow, Ui_MainWindow):
 
             # Create edges
             for n, edges in enumerate(adinkra.edges):
-                hue_fl = n/adinkra.adinkra_colors
+                if adinkra.edge_colors is None:
+                    color = QColor.fromHsvF(n/adinkra.adinkra_colors, 1.0, 1.0)
+                #elif isinstance(adinkra.edge_colors, list) and len(adinkra.edge_colors) == adinkra.adinkra_colors:
+                else:
+                    color = adinkra.edge_colors[n]
+                #else:
+                #    raise Exception("This state should not be reached")
                 for nc, (i, j) in enumerate(edges):
-                    edge = Edge(self.nodes[i], self.nodes[j+ adinkra.adinkra_size[0]], hue_fl, adinkra.dashing[n,nc])
+                    edge = Edge(self.nodes[i], self.nodes[j+ adinkra.adinkra_size[0]], color, adinkra.dashing[n,nc])
                     self.scene.addItem(edge)
                     self.edges.append(edge)
             for i, nd in enumerate(self.nodes):
                 self.scene.addItem(nd)
+
+            rect = self.scene.itemsBoundingRect()
+            margin = 200
+            rect.adjust(-margin, -margin, margin, margin)
+            
             if init:
-                rect = self.scene.itemsBoundingRect()
-                margin = 200
-                rect.adjust(-margin, -margin, margin, margin)
                 self.graphicsView.fitInView(rect, Qt.AspectRatioMode.KeepAspectRatio)
                 self.graphicsView.centerOn(rect.center())
-                rect.adjust(-2*rect.width(), -2*rect.height(), 2*rect.width(), 2*rect.height())
-                self.scene.setSceneRect(rect)
+            
+            rect.adjust(-2*rect.width(), -2*rect.height(), 2*rect.width(), 2*rect.height())
+            self.scene.setSceneRect(rect)
     
     @catch_nicely
     def open_library_file(self):
@@ -605,6 +624,49 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return "Cancel"
         else:
             return None
+     
+    @catch_nicely
+    def pick_colors_ind(self):
+        # Show the color picker dialog
+        if self.adinkra is not None:
+            num_colors = self.adinkra.value.adinkra_colors
+            colors = self.adinkra.value.edge_colors
+        else: 
+            num_colors = 1
+            colors = None
+
+        dialog = SimpleColorEditorDialog(initial_colors = colors)
+        
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            colors = dialog.get_colors()
+            print("Selected colors:")
+            for i, color in enumerate(colors):
+                print(f"  Color {i+1}: {color.name()} (H:{color.hue()}, S:{color.saturation()}, V:{color.value()})")
+            if self.adinkra is not None:
+                self.adinkra.value.edge_colors = colors
+                self.refresh_graph()
+
+
+    @catch_nicely
+    def pick_colors_def(self):
+        # Show the color picker dialog
+        if self.adinkra is not None:
+            num_colors = self.adinkra.value.adinkra_colors
+            colors = self.adinkra.value.edge_colors
+        else: 
+            num_colors = 1
+            colors = None
+
+        dialog = ColorPickerDialog(num_colors, colors)
+        
+        if dialog.exec() == QtWidgets.QDialog.DialogCode.Accepted:
+            colors = dialog.get_selected_colors()
+            print("Selected colors:")
+            for i, color in enumerate(colors):
+                print(f"  Color {i+1}: {color.name()} (H:{color.hue()}, S:{color.saturation()}, V:{color.value()})")
+            if self.adinkra is not None:
+                self.adinkra.value.edge_colors = colors
+                self.refresh_graph()
 
     @catch_nicely
     def export_graphics(self):
@@ -670,7 +732,32 @@ class MainWindow(QMainWindow, Ui_MainWindow):
                 
         except Exception as e:
             QMessageBox.critical(self, "Error", f"Failed to export graphics:\n{str(e)}")
+     
+    @catch_nicely
+    def open_font_dialog(self):
+        """Open the font selection dialog"""
+        dialog = FontSelectionDialog(self.current_font, self)
+        
+        # Connect to the custom signal
+        dialog.fontSelected.connect(self.on_font_selected)
+        
+        # Show the dialog
+        if dialog.exec() == QDialog.DialogCode.Accepted:
+            # Font was selected - signal already emitted
+            pass
+        else:
+            # Dialog was cancelled
+            print("Font selection cancelled")
 
+    def on_font_selected(self, font_name, font_size):
+        """Handle font selection from dialog"""
+        print(f"Selected font: {font_name}, size: {font_size}")
+        
+        # Update current font
+        self.current_font = QFont(font_name, font_size)
+        
+        # Update UI
+        self.refresh_graph()
 
 class GraphicsExporter:
     """Utility class for exporting QGraphicsView/QGraphicsScene"""
@@ -759,6 +846,895 @@ class GraphicsExporter:
         
         return True
 
+class HexagonalColorPicker(QWidget):
+    """Custom hexagonal color picker widget"""
+    
+    colorChanged = QtCore.pyqtSignal(list)  # Emit list of selected colors
+    
+    def __init__(self, num_colors, colors, parent=None):
+        super().__init__(parent)
+        self.setMinimumSize(350, 350)
+        
+        # Color selection parameters
+        self.num_colors = num_colors
+        if colors is None:
+            self.first_color = 0
+            self.saturation = 0.8
+            self.brightness = 0.9
+        elif isinstance(colors, list) and len(colors) == num_colors:
+            self.first_color = colors[0].hue()/360
+            self.saturation = colors[0].saturation()/255
+            self.brightness = colors[0].value()/255
+        else:
+            raise Exception("This state should never be reached")
+
+        self.selected_colors = []
+        
+        # Hexagon parameters
+        self.center = QPointF(175, 175)
+        self.radius = 150
+        self.hex_radius = 8  # Radius of individual color hexagons
+        
+        # Track mouse interaction
+        self.dragging_saturation = False
+        #self.dragging_brightness = False
+        self.dragging_hue = False
+        
+        self.update_colors()
+    
+    def set_num_colors(self, n):
+        """Set the number of colors to generate"""
+        self.num_colors = max(1, n)
+        self.update_colors()
+        self.update()
+
+    def set_first_hue(self, hue):
+        """
+        Set the first color
+        """
+        self.first_color  = max(0.0, min(1.0, hue))
+        self.update_colors()
+        self.update()
+
+
+    def set_saturation(self, sat):
+        """Set saturation (0.0 to 1.0)"""
+        self.saturation = max(0.0, min(1.0, sat))
+        self.update_colors()
+        self.update()
+    
+    def set_brightness(self, bright):
+        """Set brightness/value (0.0 to 1.0)"""  
+        self.brightness = max(0.0, min(1.0, bright))
+        self.update_colors()
+        self.update()
+    
+    def update_colors(self):
+        """Update the selected colors based on current parameters"""
+        self.selected_colors = []
+        for i in range(self.num_colors):
+            hue = (self.first_color*360 + i * 360 / self.num_colors) % 360
+            color = QColor.fromHsvF(hue/360.0, self.saturation, self.brightness)
+            self.selected_colors.append(color)
+        
+        self.colorChanged.emit(self.selected_colors)
+    
+    def create_hexagon_pattern(self):
+        """Create hexagonal grid of colors in proper hexagonal arrangement"""
+        hexagons = []
+        
+        # Hexagon grid spacing
+        hex_spacing = self.hex_radius * 1.8  # Space between hexagon centers
+        
+        # Create concentric hexagonal layers
+        for layer in range(8):  # 8 layers of hexagons
+            if layer == 0:
+                # Center hexagon
+                hexagons.append({
+                    'pos': self.center,
+                    'color': QColor.fromHsvF(0, 0, 1),  # White center
+                    'layer': 0
+                })
+            else:
+                # Get hexagonal positions for this layer
+                hex_positions = self.get_hexagonal_ring_positions(layer, hex_spacing)
+                
+                for pos in hex_positions:
+                    # Calculate HSV based on hexagonal position
+                    dx = pos.x() - self.center.x()
+                    dy = pos.y() - self.center.y()
+                    
+                    # Hue from angle
+                    angle = math.atan2(dy, dx)
+                    hue = (math.degrees(angle) + 180) % 360
+                    
+                    # Saturation from layer (distance from center in hex grid)
+                    max_layer = 7
+                    sat = min(1.0, layer / max_layer)
+                    
+                    
+                    color = QColor.fromHsvF(hue/360.0, sat, self.brightness)
+                    hexagons.append({
+                        'pos': pos,
+                        'color': color,
+                        'layer': layer
+                    })
+        
+        return hexagons
+    
+    def get_hexagonal_ring_positions(self, layer, spacing):
+        """Get positions for hexagons in a hexagonal ring at given layer"""
+        positions = []
+        
+        if layer == 0:
+            return [self.center]
+        
+        # Start at the rightmost point of the hexagon
+        start_x = self.center.x() + layer * spacing
+        start_y = self.center.y()
+        
+        # Six directions for hexagonal grid
+        # Each direction is 60 degrees apart
+        hex_directions = [
+            (-0.5, -math.sqrt(3)/2),    # Top-left
+            (-1.0, 0),                  # Left  
+            (-0.5, math.sqrt(3)/2),     # Bottom-left
+            (0.5, math.sqrt(3)/2),      # Bottom-right
+            (1.0, 0),                   # Right
+            (0.5, -math.sqrt(3)/2)      # Top-right
+        ]
+        
+        current_x, current_y = start_x, start_y
+        
+        # Walk around the hexagonal perimeter
+        for side in range(6):
+            # Number of steps along this side
+            steps = layer
+            
+            direction = hex_directions[side]
+            step_x = direction[0] * spacing
+            step_y = direction[1] * spacing
+            
+            # Add hexagons along this side
+            for step in range(steps):
+                positions.append(QPointF(current_x, current_y))
+                current_x += step_x
+                current_y += step_y
+        
+        return positions
+
+   
+    def draw_hexagon(self, painter, center, radius, color):
+        """Draw a single hexagon"""
+        points = []
+        for i in range(6):
+            angle = i * math.pi / 3 + math.pi / 6
+            x = center.x() + radius * math.cos(angle)
+            y = center.y() + radius * math.sin(angle)
+            points.append(QPointF(x, y))
+        
+        polygon = QPolygonF(points)
+        painter.setBrush(QBrush(color))
+        painter.setPen(QPen(Qt.GlobalColor.black, 0.5))
+        painter.drawPolygon(polygon)
+    
+    def draw_selected_color_indicators(self, painter):
+        """Draw indicators for the currently selected colors"""
+        for i, color in enumerate(self.selected_colors):
+            # Calculate position on the hex ring
+            hue_angle = (math.pi + self.first_color*2*math.pi + i * 2 * math.pi / self.num_colors)
+            indicator_radius = self.radius
+            
+            x = self.center.x() + indicator_radius * math.cos(hue_angle)
+            y = self.center.y() + indicator_radius * math.sin(hue_angle)
+            
+            # Draw larger indicator hexagon
+            indicator_pos = QPointF(x, y)
+            
+            # Draw white outline
+            painter.setBrush(QBrush(Qt.GlobalColor.white))
+            painter.setPen(QPen(Qt.GlobalColor.black, 2))
+            self.draw_hexagon(painter, indicator_pos, self.hex_radius * 1.5, Qt.GlobalColor.white)
+            
+            # Draw color hexagon inside
+            painter.setPen(QPen(Qt.GlobalColor.black, 1))
+            self.draw_hexagon(painter, indicator_pos, self.hex_radius * 1.2, color)
+            
+            # Draw index number
+            painter.setPen(QPen(Qt.GlobalColor.white, 2))
+            painter.setFont(QtGui.QFont("Arial", 8, QtGui.QFont.Weight.Bold))
+            text_rect = QRectF(x - 10, y - 6, 20, 12)
+            painter.drawText(text_rect, Qt.AlignmentFlag.AlignCenter, str(i + 1))
+
+    def paintEvent(self, event):
+        """Custom paint event"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        try:
+            # Update center based on current widget size
+            self.center = QPointF(self.width() / 2, self.height() / 2)
+            self.radius = min(self.width(), self.height()) / 3
+            
+            # Clear background
+            painter.fillRect(self.rect(), Qt.GlobalColor.white)
+            
+            # Draw hexagonal color pattern
+            hexagons = self.create_hexagon_pattern()
+            for hex_data in hexagons:
+                self.draw_hexagon(painter, hex_data['pos'], self.hex_radius, hex_data['color'])
+            
+            # Draw saturation ring
+            sat_radius = self.radius
+            painter.setPen(QPen(Qt.GlobalColor.black, 2))
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            painter.drawEllipse(self.center, sat_radius, sat_radius)
+
+            # Draw selected color indicators
+            self.draw_selected_color_indicators(painter)
+            
+            ## Draw brightness indicator (vertical bar on right)
+            #bright_bar_x = int(self.width() - 30)
+            #bright_bar_height = int(self.height() - 40)
+            #bright_y = int(20 + (1.0 - self.brightness) * bright_bar_height)
+            #
+            ## Brightness bar background
+            #painter.fillRect(bright_bar_x, 20, 20, bright_bar_height, Qt.GlobalColor.lightGray)
+            #
+            ## Brightness indicator
+            #painter.fillRect(bright_bar_x - 2, bright_y - 2, 24, 4, Qt.GlobalColor.red)
+            
+        finally:
+            # Ensure painter is properly ended
+            painter.end()
+
+    def mousePressEvent(self, event):
+        """Handle mouse press for interactive adjustment"""
+        pos = event.position()
+        
+        ## Check if clicking on brightness bar
+        #bright_bar_x = self.width() - 30
+        #if pos.x() >= bright_bar_x - 5 and pos.x() <= bright_bar_x + 25:
+        #    self.dragging_brightness = True
+        #    self.update_brightness_from_mouse(pos.y())
+        #    return
+        
+        # Check if clicking within saturation ring area
+        distance = math.sqrt((pos.x() - self.center.x())**2 + (pos.y() - self.center.y())**2)
+        angle = math.atan2((pos.y() - self.center.y()), (pos.x() - self.center.x()))
+        print(angle)
+        if distance <= self.radius:
+            self.dragging_saturation = True
+            self.update_saturation_from_mouse(distance)
+            self.dragging_hue = True
+            self.update_hue_from_mouse(angle)
+    
+
+    def mouseMoveEvent(self, event):
+        """Handle mouse drag"""
+        pos = event.position()
+        
+        #if self.dragging_brightness:
+        #    self.update_brightness_from_mouse(pos.y())
+        if self.dragging_saturation:
+            angle = math.atan2((pos.y() - self.center.y()), (pos.x() - self.center.x()))
+            distance = math.sqrt((pos.x() - self.center.x())**2 + (pos.y() - self.center.y())**2)
+            self.update_saturation_from_mouse(distance)
+            self.update_hue_from_mouse(angle)
+    
+    def mouseReleaseEvent(self, event):
+        """Handle mouse release"""
+        #self.dragging_brightness = False
+        self.dragging_saturation = False
+        self.dragging_hue = False
+    
+    def update_hue_from_mouse(self,angle):
+        hue = (angle + math.pi) / (2*math.pi)
+        self.set_first_hue(hue)   
+
+    def update_saturation_from_mouse(self, distance):
+        """Update saturation based on mouse distance from center"""
+        new_sat = min(1.0, max(0.0, distance / self.radius))
+        self.set_saturation(new_sat)
+    
+    #def update_brightness_from_mouse(self, mouse_y):
+    #     """Update brightness based on mouse Y position"""
+    #     bright_bar_height = self.height() - 40
+    #     relative_y = mouse_y - 20
+    #     new_brightness = 1.0 - (relative_y / bright_bar_height)
+    #     new_brightness = max(0.0, min(1.0, new_brightness))
+    #     self.set_brightness(new_brightness)
+
+
+class ColorPickerDialog(QtWidgets.QDialog):
+    """Dialog containing the hexagonal color picker with controls"""
+    
+    def __init__(self, num_colors, colors, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Edge Color Picker")
+        self.setModal(True)
+        self.num_colors = num_colors
+        self.resize(600, 500)
+        self.colors = colors
+        self.selected_colors = []
+        self.setup_ui()
+    
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Color picker widget
+        self.color_picker = HexagonalColorPicker(self.num_colors, self.colors)
+        self.color_picker.colorChanged.connect(self.on_colors_changed)
+        layout.addWidget(self.color_picker)
+        
+        # Controls
+        controls_layout = QHBoxLayout()
+        
+        # Saturation
+        controls_layout.addWidget(QLabel("Saturation:"))
+        self.sat_spin = QtWidgets.QDoubleSpinBox()
+        self.sat_spin.setRange(0.0, 1.0)
+        self.sat_spin.setSingleStep(0.1)
+        self.sat_spin.setValue(0.8)
+        self.sat_spin.valueChanged.connect(self.color_picker.set_saturation)
+        controls_layout.addWidget(self.sat_spin)
+        
+        # Brightness
+        controls_layout.addWidget(QLabel("Brightness:"))
+        self.bright_spin = QtWidgets.QDoubleSpinBox()
+        self.bright_spin.setRange(0.0, 1.0)
+        self.bright_spin.setSingleStep(0.1)
+        self.bright_spin.setValue(0.9)
+        self.bright_spin.valueChanged.connect(self.color_picker.set_brightness)
+        controls_layout.addWidget(self.bright_spin)
+        
+        controls_layout.addStretch()
+        
+        # Preview colors
+        self.color_preview = QLabel("Selected Colors:")
+        layout.addWidget(self.color_preview)
+        
+        layout.addLayout(controls_layout)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.ok_button = QPushButton("OK")
+        self.cancel_button = QPushButton("Cancel")
+        
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+    
+    def on_colors_changed(self, colors):
+        """Handle color selection change"""
+        self.selected_colors = colors
+        
+        # Update spinboxes
+        self.sat_spin.setValue(self.color_picker.saturation)
+        self.bright_spin.setValue(self.color_picker.brightness)
+        
+        # Update preview
+        preview_text = f"Selected {self.num_colors} Colors"
+        self.color_preview.setText(preview_text)
+    
+    def get_selected_colors(self):
+        """Return the selected colors"""
+        return self.selected_colors
+
+class ColorPreviewWidget(QWidget):
+    """Small widget to display a color preview"""
+    
+    def __init__(self, color=None, size=40):
+        super().__init__()
+        self.color = color or QColor(255, 255, 255)
+        self.setFixedSize(size, size)
+    
+    def set_color(self, color):
+        """Update the color and repaint"""
+        self.color = color
+        self.update()
+    
+    def paintEvent(self, event):
+        """Paint the color preview"""
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Draw color rectangle with border
+        painter.setBrush(QBrush(self.color))
+        painter.setPen(QPen(Qt.GlobalColor.black, 1))
+        painter.drawRect(2, 2, self.width() - 4, self.height() - 4)
+
+class ColorListItem(QWidget):
+    """Custom widget for each color in the list"""
+    
+    def __init__(self, color_index, color):
+        super().__init__()
+        self.color_index = color_index
+        self.color = color
+        self.setup_ui()
+    
+    def setup_ui(self):
+        layout = QHBoxLayout(self)
+        layout.setContentsMargins(5, 5, 5, 5)
+        
+        # Color number label
+        self.number_label = QLabel(f"Color {self.color_index + 1}:")
+        self.number_label.setMinimumWidth(60)
+        layout.addWidget(self.number_label)
+        
+        # Color preview
+        self.color_preview = ColorPreviewWidget(self.color, 30)
+        layout.addWidget(self.color_preview)
+        
+        # Color info labels
+        info_layout = QVBoxLayout()
+        info_layout.setSpacing(2)
+        
+        self.hex_label = QLabel(f"#{self.color.name()[1:].upper()}")
+        self.hsv_label = QLabel(f"H:{self.color.hue()}, S:{self.color.saturation()}, V:{self.color.value()}")
+        
+        info_layout.addWidget(self.hex_label)
+        info_layout.addWidget(self.hsv_label)
+        layout.addLayout(info_layout)
+        
+        layout.addStretch()
+    
+    def update_color(self, color):
+        """Update the color and all displays"""
+        self.color = color
+        self.color_preview.set_color(color)
+        self.hex_label.setText(f"#{color.name()[1:].upper()}")
+        self.hsv_label.setText(f"H:{color.hue()}, S:{color.saturation()}, V:{color.value()}")
+
+class HSVSliderGroup(QWidget):
+    """Group of HSV sliders for editing a color"""
+    
+    colorChanged = pyqtSignal(QColor)
+    
+    def __init__(self):
+        super().__init__()
+        self.color = QColor(255, 0, 0)  # Default red
+        self.updating = False  # Prevent feedback loops
+        self.setup_ui()
+    
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Hue slider (0-359)
+        hue_group = QGroupBox("Hue (0-359°)")
+        hue_layout = QHBoxLayout(hue_group)
+        
+        self.hue_slider = QSlider(Qt.Orientation.Horizontal)
+        self.hue_slider.setRange(0, 359)
+        self.hue_slider.setValue(0)
+        self.hue_slider.valueChanged.connect(self.on_hue_changed)
+        
+        self.hue_spinbox = QSpinBox()
+        self.hue_spinbox.setRange(0, 359)
+        self.hue_spinbox.setValue(0)
+        self.hue_spinbox.valueChanged.connect(self.on_hue_spinbox_changed)
+        
+        hue_layout.addWidget(self.hue_slider)
+        hue_layout.addWidget(self.hue_spinbox)
+        layout.addWidget(hue_group)
+        
+        # Saturation slider (0-255)
+        sat_group = QGroupBox("Saturation (0-255)")
+        sat_layout = QHBoxLayout(sat_group)
+        
+        self.sat_slider = QSlider(Qt.Orientation.Horizontal)
+        self.sat_slider.setRange(0, 255)
+        self.sat_slider.setValue(255)
+        self.sat_slider.valueChanged.connect(self.on_sat_changed)
+        
+        self.sat_spinbox = QSpinBox()
+        self.sat_spinbox.setRange(0, 255)
+        self.sat_spinbox.setValue(255)
+        self.sat_spinbox.valueChanged.connect(self.on_sat_spinbox_changed)
+        
+        sat_layout.addWidget(self.sat_slider)
+        sat_layout.addWidget(self.sat_spinbox)
+        layout.addWidget(sat_group)
+        
+        # Value/Brightness slider (0-255)
+        val_group = QGroupBox("Value/Brightness (0-255)")
+        val_layout = QHBoxLayout(val_group)
+        
+        self.val_slider = QSlider(Qt.Orientation.Horizontal)
+        self.val_slider.setRange(0, 255)
+        self.val_slider.setValue(255)
+        self.val_slider.valueChanged.connect(self.on_val_changed)
+        
+        self.val_spinbox = QSpinBox()
+        self.val_spinbox.setRange(0, 255)
+        self.val_spinbox.setValue(255)
+        self.val_spinbox.valueChanged.connect(self.on_val_spinbox_changed)
+        
+        val_layout.addWidget(self.val_slider)
+        val_layout.addWidget(self.val_spinbox)
+        layout.addWidget(val_group)
+        
+        # Large color preview
+        preview_group = QGroupBox("Color Preview")
+        preview_layout = QHBoxLayout(preview_group)
+        
+        self.large_preview = ColorPreviewWidget(self.color, 100)
+        preview_layout.addWidget(self.large_preview)
+        preview_layout.addStretch()
+        
+        # Color info
+        info_layout = QVBoxLayout()
+        self.preview_hex = QLabel(f"#{self.color.name()[1:].upper()}")
+        self.preview_hex.setStyleSheet("font-weight: bold; font-size: 12px;")
+        self.preview_hsv = QLabel(f"HSV: ({self.color.hue()}, {self.color.saturation()}, {self.color.value()})")
+        self.preview_rgb = QLabel(f"RGB: ({self.color.red()}, {self.color.green()}, {self.color.blue()})")
+        
+        info_layout.addWidget(self.preview_hex)
+        info_layout.addWidget(self.preview_hsv)
+        info_layout.addWidget(self.preview_rgb)
+        info_layout.addStretch()
+        
+        preview_layout.addLayout(info_layout)
+        layout.addWidget(preview_group)
+    
+    def set_color(self, color):
+        """Set the color and update all controls"""
+        self.updating = True
+        self.color = color
+        
+        # Update sliders and spinboxes
+        self.hue_slider.setValue(color.hue() if color.hue() >= 0 else 0)
+        self.hue_spinbox.setValue(color.hue() if color.hue() >= 0 else 0)
+        self.sat_slider.setValue(color.saturation())
+        self.sat_spinbox.setValue(color.saturation())
+        self.val_slider.setValue(color.value())
+        self.val_spinbox.setValue(color.value())
+        
+        # Update preview
+        self.update_preview()
+        self.updating = False
+    
+    def update_preview(self):
+        """Update the color preview and info labels"""
+        self.large_preview.set_color(self.color)
+        self.preview_hex.setText(f"#{self.color.name()[1:].upper()}")
+        self.preview_hsv.setText(f"HSV: ({self.color.hue()}, {self.color.saturation()}, {self.color.value()})")
+        self.preview_rgb.setText(f"RGB: ({self.color.red()}, {self.color.green()}, {self.color.blue()})")
+    
+    def update_color_from_hsv(self):
+        """Update color from current HSV values"""
+        if self.updating:
+            return
+        
+        h = self.hue_slider.value()
+        s = self.sat_slider.value() 
+        v = self.val_slider.value()
+        
+        self.color = QColor.fromHsv(h, s, v)
+        self.update_preview()
+        self.colorChanged.emit(self.color)
+    
+    # Slider change handlers
+    def on_hue_changed(self, value):
+        self.hue_spinbox.setValue(value)
+        self.update_color_from_hsv()
+    
+    def on_hue_spinbox_changed(self, value):
+        self.hue_slider.setValue(value)
+        self.update_color_from_hsv()
+    
+    def on_sat_changed(self, value):
+        self.sat_spinbox.setValue(value)
+        self.update_color_from_hsv()
+    
+    def on_sat_spinbox_changed(self, value):
+        self.sat_slider.setValue(value)
+        self.update_color_from_hsv()
+    
+    def on_val_changed(self, value):
+        self.val_spinbox.setValue(value)
+        self.update_color_from_hsv()
+    
+    def on_val_spinbox_changed(self, value):
+        self.val_slider.setValue(value)
+        self.update_color_from_hsv()
+
+class SimpleColorListEditor(QWidget):
+    """Main widget for editing a list of colors with HSV sliders"""
+    
+    colorsChanged = pyqtSignal(list)  # Emit updated color list
+    
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.colors = [QColor.fromHsv(i * 60, 255, 255) for i in range(1)]  # Default colors
+        self.current_color_index = 0
+        self.color_list_items = []
+        self.setup_ui()
+        self.update_color_list()
+    
+    def setup_ui(self):
+        layout = QHBoxLayout(self)
+        
+        # Left side - Color list
+        left_layout = QVBoxLayout()
+        
+        # Number of colors control
+        controls_layout = QHBoxLayout()
+        controls_layout.addWidget(QLabel(f"Number of Colors: {len(self.colors)}"))
+        controls_layout.addStretch()
+        
+        left_layout.addLayout(controls_layout)
+        
+        # Color list
+        list_label = QLabel("Colors:")
+        list_label.setStyleSheet("font-weight: bold;")
+        left_layout.addWidget(list_label)
+        
+        self.color_list = QListWidget()
+        self.color_list.setMaximumWidth(300)
+        self.color_list.currentRowChanged.connect(self.on_color_selected)
+        left_layout.addWidget(self.color_list)
+        
+        layout.addLayout(left_layout)
+        
+        # Vertical separator
+        separator = QFrame()
+        separator.setFrameStyle(QFrame.Shape.VLine | QFrame.Shadow.Sunken)
+        layout.addWidget(separator)
+        
+        # Right side - HSV editor
+        right_layout = QVBoxLayout()
+        
+        editor_label = QLabel("Edit Selected Color:")
+        editor_label.setStyleSheet("font-weight: bold; font-size: 14px;")
+        right_layout.addWidget(editor_label)
+        
+        self.hsv_editor = HSVSliderGroup()
+        self.hsv_editor.colorChanged.connect(self.on_color_edited)
+        right_layout.addWidget(self.hsv_editor)
+        
+        right_layout.addStretch()
+        
+        layout.addLayout(right_layout)
+        
+        # Set initial selection
+        if self.colors:
+            self.color_list.setCurrentRow(0)
+    
+    def set_colors(self, colors):
+        """Set the color list from external source"""
+        self.colors = colors[:]  # Make a copy
+        self.update_color_list()
+        if self.colors:
+            self.color_list.setCurrentRow(0)
+    
+    def get_colors(self):
+        """Get the current color list"""
+        return self.colors[:]
+
+    def update_color_list(self):
+        """Refresh the color list display"""
+        self.color_list.clear()
+        self.color_list_items = []
+        
+        for i, color in enumerate(self.colors):
+            # Create custom widget for this color
+            item_widget = ColorListItem(i, color)
+            
+            # Create list item
+            list_item = QListWidgetItem()
+            list_item.setSizeHint(item_widget.sizeHint())
+            
+            # Add to list
+            self.color_list.addItem(list_item)
+            self.color_list.setItemWidget(list_item, item_widget)
+            
+            self.color_list_items.append(item_widget)
+    
+    def on_color_selected(self, row):
+        """Handle color selection in the list"""
+        if 0 <= row < len(self.colors):
+            self.current_color_index = row
+            self.hsv_editor.set_color(self.colors[row])
+    
+    def on_color_edited(self, new_color):
+        """Handle color being edited in HSV sliders"""
+        if 0 <= self.current_color_index < len(self.colors):
+            self.colors[self.current_color_index] = new_color
+            
+            # Update the list item
+            if self.current_color_index < len(self.color_list_items):
+                self.color_list_items[self.current_color_index].update_color(new_color)
+            
+            self.colorsChanged.emit(self.colors)
+
+class SimpleColorEditorDialog(QDialog):
+    """Dialog wrapper for the simple color editor"""
+    
+    def __init__(self, initial_colors=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Color Editor")
+        self.setModal(True)
+        self.resize(700, 500)
+        
+        self.setup_ui()
+        
+        if initial_colors:
+            self.color_editor.set_colors(initial_colors)
+    
+    def setup_ui(self):
+        layout = QVBoxLayout(self)
+        
+        # Color editor widget
+        self.color_editor = SimpleColorListEditor()
+        layout.addWidget(self.color_editor)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        
+        self.reset_button = QPushButton("Reset to Default")
+        self.reset_button.clicked.connect(self.reset_colors)
+        button_layout.addWidget(self.reset_button)
+        
+        button_layout.addStretch()
+        
+        self.ok_button = QPushButton("OK")
+        self.cancel_button = QPushButton("Cancel")
+        
+        self.ok_button.clicked.connect(self.accept)
+        self.cancel_button.clicked.connect(self.reject)
+        
+        button_layout.addWidget(self.ok_button)
+        button_layout.addWidget(self.cancel_button)
+        
+        layout.addLayout(button_layout)
+    
+    def reset_colors(self):
+        """Reset to default rainbow colors"""
+        default_colors = [QColor.fromHsv(i * 60, 255, 255) for i in range(6)]
+        self.color_editor.set_colors(default_colors)
+    
+    def get_colors(self):
+        """Get the selected colors"""
+        return self.color_editor.get_colors()
+
+
+class FontSelectionDialog(QDialog):
+    """Standalone font selection dialog that emits font information when accepted"""
+    
+    # Custom signal that emits font name and size
+    fontSelected = Signal(str, int)  # font_name, font_size
+    
+    def __init__(self, initial_font=None, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle("Select Font")
+        self.setModal(True)
+        self.resize(450, 350)
+        
+        # Store the selected font info
+        self.selected_font_name = ""
+        self.selected_font_size = 12
+        
+        self.setup_ui()
+        self.connect_signals()
+        
+        # Set initial font if provided
+        if initial_font:
+            self.set_initial_font(initial_font)
+        else:
+            self.update_font_preview()
+    
+    def setup_ui(self):
+        """Set up the user interface"""
+        layout = QVBoxLayout(self)
+        
+        # Font family selection
+        font_family_layout = QHBoxLayout()
+        font_family_layout.addWidget(QLabel("Font Family:"))
+        self.font_combo_box = QFontComboBox(self)
+        self.font_combo_box.setWritingSystem(QFontDatabase.WritingSystem.Any)
+        font_family_layout.addWidget(self.font_combo_box)
+        layout.addLayout(font_family_layout)
+        
+        # Font size selection
+        font_size_layout = QHBoxLayout()
+        font_size_layout.addWidget(QLabel("Font Size:"))
+        self.size_combo = QComboBox(self)
+        self.size_combo.setEditable(True)  # Allow custom sizes
+        sizes = [8, 9, 10, 11, 12, 14, 16, 18, 20, 22, 24, 26, 28, 32, 36, 48, 72]
+        for size in sizes:
+            self.size_combo.addItem(str(size))
+        self.size_combo.setCurrentText("12")
+        font_size_layout.addWidget(self.size_combo)
+        layout.addLayout(font_size_layout)
+        
+        # Current selection info
+        self.font_info_label = QLabel("Font: ", self)
+        layout.addWidget(self.font_info_label)
+        
+        # Preview section
+        layout.addWidget(QLabel("Preview:"))
+        self.preview_text = QTextEdit(self)
+        self.preview_text.setText(
+            "The quick brown fox jumps over the lazy dog.\n"
+            "ABCDEFGHIJKLMNOPQRSTUVWXYZ\n"
+            "abcdefghijklmnopqrstuvwxyz\n"
+            "1234567890 !@#$%^&*()"
+        )
+        self.preview_text.setMaximumHeight(120)
+        layout.addWidget(self.preview_text)
+        
+        # Buttons
+        button_layout = QHBoxLayout()
+        self.ok_button = QPushButton("OK", self)
+        self.cancel_button = QPushButton("Cancel", self)
+        
+        button_layout.addStretch()
+        button_layout.addWidget(self.cancel_button)
+        button_layout.addWidget(self.ok_button)
+        
+        layout.addLayout(button_layout)
+        
+        # Set OK as default button
+        self.ok_button.setDefault(True)
+    
+    def connect_signals(self):
+        """Connect signals to slots"""
+        self.font_combo_box.currentFontChanged.connect(self.update_font_preview)
+        self.size_combo.currentTextChanged.connect(self.update_font_preview)
+        
+        self.ok_button.clicked.connect(self.accept_selection)
+        self.cancel_button.clicked.connect(self.reject)
+    
+    def update_font_preview(self):
+        """Update the preview with current font selection"""
+        font = self.font_combo_box.currentFont()
+        
+        # Get size from combo box
+        try:
+            size = int(self.size_combo.currentText())
+            if size <= 0:
+                size = 12
+        except ValueError:
+            size = 12
+            self.size_combo.setCurrentText("12")
+        
+        font.setPointSize(size)
+        
+        # Update preview
+        self.preview_text.setFont(font)
+        
+        # Update info label
+        self.font_info_label.setText(f"Font: {font.family()}, Size: {size}")
+        
+        # Store current selection
+        self.selected_font_name = font.family()
+        self.selected_font_size = size
+    
+    def set_initial_font(self, font):
+        """Set the initial font selection"""
+        self.font_combo_box.setCurrentFont(font)
+        self.size_combo.setCurrentText(str(font.pointSize()))
+        self.update_font_preview()
+    
+    def accept_selection(self):
+        """Accept the current selection and emit the signal"""
+        self.fontSelected.emit(self.selected_font_name, self.selected_font_size)
+        self.accept()
+    
+    def get_selected_font(self):
+        """Get the selected font as a QFont object"""
+        font = QFont(self.selected_font_name, self.selected_font_size)
+        return font
+    
+    def get_font_info(self):
+        """Get font name and size as tuple"""
+        return (self.selected_font_name, self.selected_font_size)
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

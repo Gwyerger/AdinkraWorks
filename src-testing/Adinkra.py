@@ -47,6 +47,7 @@ class Adinkra:
             self.fermion_positions = None
             self.boson_labels = None
             self.fermion_labels = None
+            self.edge_colors = None
         else:
             print(f"File {path} does not exist.")
     def __repr__(self):
