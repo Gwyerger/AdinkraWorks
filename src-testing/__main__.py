@@ -55,7 +55,7 @@ def find_first_adinkra(parent_item):
     return None  # Not found
 
 class DraggableBoson(QGraphicsEllipseItem):
-    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, fontstyle = "Arial", fontsize=12):
+    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, font = QFont('Arial', 12)):
         super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
         self.parent_adinkra = parent_adinkra
         self.label = label
@@ -71,7 +71,7 @@ class DraggableBoson(QGraphicsEllipseItem):
 
         # Add centered text
         self.text_item = QGraphicsTextItem(label, self)  # Add text as child
-        self.text_item.setFont(QFont(fontstyle, fontsize))
+        self.text_item.setFont(font)
         self.text_item.setDefaultTextColor(Qt.GlobalColor.black)
         self.center_text()
 
@@ -120,7 +120,7 @@ class DraggableBoson(QGraphicsEllipseItem):
         return super().itemChange(change, value)
 
 class DraggableFermion(QGraphicsEllipseItem):
-    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, fontsize=12):
+    def __init__(self, x, y, label="", parent_adinkra = None, grid_size_x=100, grid_size_y=400, font = QFont('Arial', 12)):
         super().__init__(x - 25, y - 25, 50, 50)  # (x, y, width, height)
         self.parent_adinkra = parent_adinkra
         self.label = label
@@ -137,7 +137,7 @@ class DraggableFermion(QGraphicsEllipseItem):
         self.scene_y = y
         # Add centered text
         self.text_item = QGraphicsTextItem(label, self)  # Add text as child
-        self.text_item.setFont(QFont("Arial", fontsize))
+        self.text_item.setFont(font)
         self.text_item.setDefaultTextColor(Qt.GlobalColor.white)
         self.center_text()
 
@@ -263,11 +263,11 @@ class MainWindow(QMainWindow, Ui_MainWindow):
         self.library = None
         self.theory = None
         self.adinkra = None
-        self.fontsize = 24
-        self.current_font = None
+        self.current_font = QFont('Arial', 12)
         # self setup graphics
         self.setupUi(self)
         self.refresh_graph(init=True)
+        self.aspect_modifier = 1
 
         # Connect menu actions to functions
         self.actionOpen_Library.triggered.connect(self.wrap_for_trigger(self.open_library_file))
@@ -449,23 +449,25 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             else:
                 fermion_labels = adinkra.fermion_labels
 
+
             if adinkra.boson_positions is None or adinkra.fermion_positions is None:
                 adinkra.boson_positions = {}
                 adinkra.fermion_positions = {}
+                self.aspect_modifier = max(1,max(adinkra.adinkra_size[0], adinkra.adinkra_size[1])/16)
                 #bosons
                 for i in range(adinkra.adinkra_size[0]):
-                    adinkra.boson_positions[boson_labels[i]] = [x_center - int((adinkra.adinkra_size[0]/2 - i) * 100), y_center - 200 +400*adinkra.boson_elevations[i]]
+                    adinkra.boson_positions[boson_labels[i]] = [x_center - int((adinkra.adinkra_size[0]/2 - i) * 100), y_center - (200 - 400*adinkra.boson_elevations[i])*self.aspect_modifier]
                 #fermions
                 for i in range(adinkra.adinkra_size[1]):
-                    adinkra.fermion_positions[fermion_labels[i]] = [x_center - int((adinkra.adinkra_size[1]/2 - i) * 100), y_center - 200 + 400*adinkra.fermion_elevations[i]]
+                    adinkra.fermion_positions[fermion_labels[i]] = [x_center - int((adinkra.adinkra_size[1]/2 - i) * 100), y_center - (200 - 400*adinkra.fermion_elevations[i])*self.aspect_modifier]
 
             # Create draggable nodes
             for i, (x, y) in enumerate(adinkra.boson_positions.values()):
-                node = DraggableBoson(x, y, label = boson_labels[i], parent_adinkra=adinkra,fontsize=self.fontsize)
+                node = DraggableBoson(x, y, label = boson_labels[i], parent_adinkra=adinkra,font=self.current_font, grid_size_x = 100, grid_size_y = int(self.aspect_modifier*400))
                 self.nodes.append(node)
             # Create draggable nodes
             for i, (x, y) in enumerate(adinkra.fermion_positions.values()):
-                node = DraggableFermion(x, y, label = fermion_labels[i], parent_adinkra=adinkra,fontsize=self.fontsize)
+                node = DraggableFermion(x, y, label = fermion_labels[i], parent_adinkra=adinkra,font=self.current_font, grid_size_x = 100, grid_size_y = int(self.aspect_modifier*400))
                 self.nodes.append(node)
 
             # Create edges
