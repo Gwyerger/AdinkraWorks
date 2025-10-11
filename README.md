@@ -32,6 +32,8 @@
 
 ### Installation
 
+(Linux)
+
 ```bash
 # Clone the repository
 git clone git@github.com:Gwyerger/AdinkraWorks.git
@@ -41,7 +43,6 @@ cd AdinkraWorks
 python3 -m venv aw_venv
 
 # Activate
-chmod +x ./aw_venv/bin/activate
 source ./aw_venv/bin/activate
 
 # Install dependencies
@@ -49,7 +50,59 @@ pip install -r requirements.txt
 
 # Run the application
 python3 src/__main__.py
+
+# Deactivate the environment when finished
+deactivate
 ```
+
+(Windows)
+
+```sh
+# Clone the repository
+git clone https://github.com/Gwyerger/AdinkraWorks.git
+cd AdinkraWorks
+
+# Create a Virtual Environment
+python -m venv aw_venv
+
+# Activate
+cd aw_venv
+cd Scripts
+.\Activate.ps1
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python src\__main__.py
+
+# Deactivate the environment when finished
+deactivate
+```
+
+(MacOS)
+
+```bash
+# Clone the repository
+git clone https://github.com/Gwyerger/AdinkraWorks.git
+cd AdinkraWorks
+
+# Create a virtual environment
+python3 -m venv aw_venv
+
+# Activate the virtual environment
+source aw_venv/bin/activate
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Run the application
+python3 src/__main__.py
+
+# Deactivate the environment when finished
+deactivate
+```
+
 
 ### Quick Start Guide
 
