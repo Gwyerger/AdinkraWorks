@@ -34,14 +34,21 @@
 
 ```bash
 # Clone the repository
-git clone https://github.com/Gwyerger/AdinkraWorks.git
+git clone git@github.com:Gwyerger/AdinkraWorks.git
 cd AdinkraWorks
+
+# Create a Virtual Environment
+python3 -m venv aw_venv
+
+# Activate
+chmod +x ./aw_venv/bin/activate
+source ./aw_venv/bin/activate
 
 # Install dependencies
 pip install -r requirements.txt
 
 # Run the application
-python src/__main__.py
+python3 src/__main__.py
 ```
 
 ### Quick Start Guide
