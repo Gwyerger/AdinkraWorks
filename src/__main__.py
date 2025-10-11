@@ -585,15 +585,17 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
 
         """Open a file dialog to save data."""
-        file_path, _ = QFileDialog.getSaveFileName(self, "Save File", f"{self.library.text(0)}.pkl", "All Files (*);;Adinkra Library (*.pkl)")
+        file_path, rc = QFileDialog.getSaveFileName(self, "Save File", f"{self.library.text(0)}.pkl", "All Files (*);;Adinkra Library (*.pkl)")
         if file_path:
             try:
                 self.library.save_tree(file_path)
                 QMessageBox.information(self, "Information", f"Saved file: {file_path}")
-                return
+                return "Saved"
             except Exception as e:
                 QMessageBox.critical(self, "Error", f"Failed to save file:\n{str(e)}")
-                return
+                return "Error"
+        else:
+            return "Cancel"
 
     @catch_nicely
     def close_library(self):
@@ -602,12 +604,15 @@ class MainWindow(QMainWindow, Ui_MainWindow):
             return
         userpressed = self.show_save_option_box()
         if userpressed == "Save":
-            self.save_library_file()
+            userpressed = self.save_library_file()
+            if userpressed == "Saved":
+                self.reset_library()
+            else:
+                return
         elif userpressed == "Don't Save":
-            pass
+            self.reset_library()
         elif userpressed == "Cancel":
             return
-        self.reset_library()
         return
 
     @catch_nicely
